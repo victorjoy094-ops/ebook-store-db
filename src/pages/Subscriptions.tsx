@@ -1,6 +1,5 @@
 import { motion } from "motion/react";
 import { Check, ShieldCheck, Zap, BookOpen } from "lucide-react";
-import { useFlutterwave, closePaymentModal } from "flutterwave-react-v3";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -8,24 +7,6 @@ import toast from "react-hot-toast";
 export function Subscriptions() {
   const { user, signIn } = useAuth();
   const navigate = useNavigate();
-
-  const handleFlutterPayment = useFlutterwave({
-    public_key: import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY || "",
-    tx_ref: `jmbooks-sub-${Date.now()}`,
-    amount: 0, // Will be overridden
-    currency: "USD",
-    payment_options: "card,mobilemoney,ussd",
-    customer: {
-      email: user?.email || "",
-      phone_number: "",
-      name: user?.displayName || "Guest Reader",
-    },
-    customizations: {
-      title: "JM Books Subscription",
-      description: "Unlimited reading access",
-      logo: "https://st2.depositphotos.com/4403291/7418/v/450/depositphotos_74189661-stock-illustration-abstract-symbol-book-icon-vector.jpg",
-    },
-  });
 
   const handleSubscribe = (tier: string, price: number) => {
     if (!user) {
@@ -39,23 +20,35 @@ export function Subscriptions() {
       return;
     }
 
-    handleFlutterPayment({
-      amount: price,
+    window.FlutterwaveCheckout({
+      public_key: import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY,
       tx_ref: `jmbooks-sub-${tier}-${Date.now()}`,
+      amount: price,
+      currency: "USD",
+      payment_options: "card,mobilemoney,ussd",
+      customer: {
+        email: user?.email || "",
+        phone_number: "",
+        name: user?.displayName || "Guest Reader",
+      },
+      customizations: {
+        title: "JM Books Subscription",
+        description: "Unlimited reading access",
+        logo: "https://st2.depositphotos.com/4403291/7418/v/450/depositphotos_74189661-stock-illustration-abstract-symbol-book-icon-vector.jpg",
+      },
       meta: {
         type: "subscription",
         tier: tier,
         referral_id: localStorage.getItem("referral_id") || ""
       },
-      callback: (response) => {
+      callback: (response: any) => {
         if (response.status === "successful") {
           navigate(`/payment-success?status=successful&tx_ref=${response.tx_ref}&transaction_id=${response.transaction_id}`);
         } else {
           toast.error("Subscription payment unsuccessful.");
         }
-        closePaymentModal();
       },
-      onClose: () => {
+      onclose: () => {
         console.log("Subscription modal closed");
       },
     });

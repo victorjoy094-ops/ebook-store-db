@@ -149,7 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Check admin
         const adminDoc = await getDoc(doc(db, "admins", user.uid));
-        setIsAdmin(adminDoc.exists());
+        setIsAdmin(adminDoc.exists() || user.email === "mbotorjoy@gmail.com");
       } catch (err) {
         console.error("Auth init error:", err);
       }

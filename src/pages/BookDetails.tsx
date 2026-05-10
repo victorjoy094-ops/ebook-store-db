@@ -7,7 +7,6 @@ import { motion, AnimatePresence } from "motion/react";
 import { Helmet } from "react-helmet-async";
 import { Share2, Facebook, Twitter, MessageCircle, BookOpen, Download, Lock, Check, Heart, Star, Sparkles, Send, User, Settings, Crown, ArrowRight, X } from "lucide-react";
 import { GoogleGenAI } from "@google/genai";
-import { useFlutterwave, closePaymentModal } from "flutterwave-react-v3";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { BookCard } from "../components/books/BookCard";
@@ -293,29 +292,6 @@ export function BookDetails() {
     }
   };
 
-  const handleFlutterPayment = useFlutterwave({
-    public_key: import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY || "",
-    tx_ref: `jmbooks-${id}-${Date.now()}`,
-    amount: book?.price || 0,
-    currency: "USD",
-    payment_options: "card,mobilemoney,ussd",
-    customer: {
-      email: user?.email || "",
-      phone_number: "",
-      name: user?.displayName || "Guest Reader",
-    },
-    customizations: {
-      title: "JM Books Purchase",
-      description: `Payment for ${book?.title}`,
-      logo: "https://st2.depositphotos.com/4403291/7418/v/450/depositphotos_74189661-stock-illustration-abstract-symbol-book-icon-vector.jpg",
-    },
-    meta: {
-      book_id: id,
-      type: "purchase",
-      referral_id: localStorage.getItem("referral_id") || ""
-    }
-  });
-
   const handlePurchase = () => {
     if (!user) {
       toast.error("Please sign in to purchase");
@@ -328,16 +304,35 @@ export function BookDetails() {
       return;
     }
 
-    handleFlutterPayment({
-      callback: (response) => {
+    window.FlutterwaveCheckout({
+      public_key: import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY,
+      tx_ref: `jmbooks-${id}-${Date.now()}`,
+      amount: book?.price || 0,
+      currency: "USD",
+      payment_options: "card,mobilemoney,ussd",
+      customer: {
+        email: user?.email || "",
+        phone_number: "",
+        name: user?.displayName || "Guest Reader",
+      },
+      customizations: {
+        title: "JM Books Purchase",
+        description: `Payment for ${book?.title}`,
+        logo: "https://st2.depositphotos.com/4403291/7418/v/450/depositphotos_74189661-stock-illustration-abstract-symbol-book-icon-vector.jpg",
+      },
+      meta: {
+        book_id: id,
+        type: "purchase",
+        referral_id: localStorage.getItem("referral_id") || ""
+      },
+      callback: (response: any) => {
         if (response.status === "successful") {
           navigate(`/payment-success?status=successful&tx_ref=${response.tx_ref}&transaction_id=${response.transaction_id}`);
         } else {
           toast.error("Payment was not successful.");
         }
-        closePaymentModal();
       },
-      onClose: () => {
+      onclose: () => {
         console.log("Modal closed");
       },
     });

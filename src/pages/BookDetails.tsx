@@ -45,7 +45,7 @@ export function BookDetails() {
             category: "Educational Textbook",
             description: "Fundamentals of Business Management is a comprehensive guide that bridges theory and practice, equipping students, entrepreneurs, and business leaders with the knowledge to thrive in today's dynamic business environment. Covering core topics such as corporate governance, digital transformation, sustainability, and crisis management, this book blends global insights with practical case studies to inspire ethical leadership and strategic thinking.",
             price: 5.00,
-            coverUrl: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=600&h=800",
+            coverUrl: "/book_cover.png",
             status: "published",
             createdAt: new Date().toISOString()
           };

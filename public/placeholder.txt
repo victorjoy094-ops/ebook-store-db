@@ -1,0 +1,1 @@
+This folder contains static assets. Please upload your book cover as 'book_cover.png' here.

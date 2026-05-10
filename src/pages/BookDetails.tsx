@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Helmet } from "react-helmet-async";
 import { Share2, Facebook, Twitter, MessageCircle, BookOpen, Download, Lock, Check, Heart, Star, Sparkles, Send, User, Settings, Crown, ArrowRight, X } from "lucide-react";
 import { GoogleGenAI } from "@google/genai";
+import { useFlutterwave, closePaymentModal } from "flutterwave-react-v3";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { BookCard } from "../components/books/BookCard";
@@ -292,30 +293,54 @@ export function BookDetails() {
     }
   };
 
-  const handlePurchase = async () => {
+  const handleFlutterPayment = useFlutterwave({
+    public_key: import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY || "",
+    tx_ref: `jmbooks-${id}-${Date.now()}`,
+    amount: book?.price || 0,
+    currency: "USD",
+    payment_options: "card,mobilemoney,ussd",
+    customer: {
+      email: user?.email || "",
+      phone_number: "",
+      name: user?.displayName || "Guest Reader",
+    },
+    customizations: {
+      title: "JM Books Purchase",
+      description: `Payment for ${book?.title}`,
+      logo: "https://st2.depositphotos.com/4403291/7418/v/450/depositphotos_74189661-stock-illustration-abstract-symbol-book-icon-vector.jpg",
+    },
+    meta: {
+      book_id: id,
+      type: "purchase",
+      referral_id: localStorage.getItem("referral_id") || ""
+    }
+  });
+
+  const handlePurchase = () => {
     if (!user) {
       toast.error("Please sign in to purchase");
       signIn();
       return;
     }
 
-    try {
-      const response = await axios.post("/api/payments/initialize", {
-        amount: book.price,
-        email: user.email,
-        name: user.displayName,
-        book_id: book.id,
-        type: "purchase",
-        referral_id: localStorage.getItem("referral_id")
-      });
-
-      if (response.data.status === "success") {
-        window.location.href = response.data.data.link;
-      }
-    } catch (error) {
-      console.error("Payment initialization failed:", error);
-      toast.error("Could not initialize payment");
+    if (!import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY) {
+      toast.error("Payment system not initialized. Contact admin.");
+      return;
     }
+
+    handleFlutterPayment({
+      callback: (response) => {
+        if (response.status === "successful") {
+          navigate(`/payment-success?status=successful&tx_ref=${response.tx_ref}&transaction_id=${response.transaction_id}`);
+        } else {
+          toast.error("Payment was not successful.");
+        }
+        closePaymentModal();
+      },
+      onClose: () => {
+        console.log("Modal closed");
+      },
+    });
   };
 
   const shareOnSocial = (platform: string) => {

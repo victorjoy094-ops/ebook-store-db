@@ -1,36 +1,64 @@
 import { motion } from "motion/react";
 import { Check, ShieldCheck, Zap, BookOpen } from "lucide-react";
+import { useFlutterwave, closePaymentModal } from "flutterwave-react-v3";
 import { useAuth } from "../contexts/AuthContext";
-import axios from "axios";
+import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 
 export function Subscriptions() {
-  const { user, profile, signIn } = useAuth();
+  const { user, signIn } = useAuth();
+  const navigate = useNavigate();
 
-  const handleSubscribe = async (tier: string, price: number) => {
+  const handleFlutterPayment = useFlutterwave({
+    public_key: import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY || "",
+    tx_ref: `jmbooks-sub-${Date.now()}`,
+    amount: 0, // Will be overridden
+    currency: "USD",
+    payment_options: "card,mobilemoney,ussd",
+    customer: {
+      email: user?.email || "",
+      phone_number: "",
+      name: user?.displayName || "Guest Reader",
+    },
+    customizations: {
+      title: "JM Books Subscription",
+      description: "Unlimited reading access",
+      logo: "https://st2.depositphotos.com/4403291/7418/v/450/depositphotos_74189661-stock-illustration-abstract-symbol-book-icon-vector.jpg",
+    },
+  });
+
+  const handleSubscribe = (tier: string, price: number) => {
     if (!user) {
       toast.error("Please sign in to subscribe");
       signIn();
       return;
     }
 
-    try {
-      const response = await axios.post("/api/payments/initialize", {
-        amount: price,
-        email: user.email,
-        name: user.displayName,
-        type: "subscription",
-        book_id: tier, // Using book_id field to pass tier name
-        referral_id: localStorage.getItem("referral_id")
-      });
-
-      if (response.data.status === "success") {
-        window.location.href = response.data.data.link;
-      }
-    } catch (error) {
-      console.error("Subscription failed:", error);
-      toast.error("Could not initialize subscription");
+    if (!import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY) {
+      toast.error("Payment system not configured.");
+      return;
     }
+
+    handleFlutterPayment({
+      amount: price,
+      tx_ref: `jmbooks-sub-${tier}-${Date.now()}`,
+      meta: {
+        type: "subscription",
+        tier: tier,
+        referral_id: localStorage.getItem("referral_id") || ""
+      },
+      callback: (response) => {
+        if (response.status === "successful") {
+          navigate(`/payment-success?status=successful&tx_ref=${response.tx_ref}&transaction_id=${response.transaction_id}`);
+        } else {
+          toast.error("Subscription payment unsuccessful.");
+        }
+        closePaymentModal();
+      },
+      onClose: () => {
+        console.log("Subscription modal closed");
+      },
+    });
   };
 
   return (

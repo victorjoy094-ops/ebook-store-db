@@ -1,0 +1,167 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitives
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function isAdmin() { return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    function isAuthor() { 
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAuthor', false) == true;
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+
+    // 1. Books
+    match /books/{bookId} {
+      function isValidBook(data) {
+        return data.title is string && data.title.size() <= 200
+            && data.author is string && data.author.size() <= 200
+            && data.authorId == request.auth.uid
+            && (data.isbn13 == null || (data.isbn13 is string && data.isbn13.size() >= 10 && data.isbn13.size() <= 13))
+            && data.price is number && data.price >= 0
+            && data.category is string
+            && (data.status == null || data.status in ['draft', 'pending', 'published'])
+            && (data.coverUrl == null || (data.coverUrl is string && data.coverUrl.size() <= 1000))
+            && (data.pdfUrl == null || (data.pdfUrl is string && data.pdfUrl.size() <= 1000))
+            && (data.createdAt is timestamp);
+      }
+
+      allow list: if resource.data.status == 'published' || (isSignedIn() && resource.data.authorId == request.auth.uid) || isAdmin();
+      allow get: if resource.data.status == 'published' || (isSignedIn() && resource.data.authorId == request.auth.uid) || isAdmin();
+      
+      allow create: if (isAdmin() || (isAuthor() && incoming().authorId == request.auth.uid)) 
+                    && isValidBook(incoming()) && isValidId(bookId);
+      
+      allow update: if (isAdmin() || (isAuthor() && existing().authorId == request.auth.uid)) 
+                    && isValidBook(incoming())
+                    && (isAdmin() || (incoming().status == 'draft' || incoming().status == 'pending' || (incoming().status == 'published' && existing().status == 'published')));
+      
+      allow delete: if isAdmin() || (isAuthor() && existing().authorId == request.auth.uid && existing().status == 'draft');
+    }
+
+    // 2. Users
+    match /users/{userId} {
+      function isValidUser(data) {
+        return data.email is string && data.email.size() <= 255
+            && (data.displayName == null || (data.displayName is string && data.displayName.size() <= 255))
+            && (data.subscriptionTier == null || data.subscriptionTier in ['free', 'monthly', 'yearly'])
+            && (data.isPremium == null || data.isPremium is bool)
+            && (data.isAuthor == null || data.isAuthor is bool)
+            && (data.wishlist == null || data.wishlist is list)
+            && (data.purchasedBooks == null || data.purchasedBooks is list)
+            && (data.userId == null || data.userId == userId)
+            && (data.createdAt == null || data.createdAt is string || data.createdAt is timestamp);
+      }
+
+      allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      
+      allow create: if isVerified() && isOwner(userId) && isValidUser(incoming());
+      allow update: if isVerified() && isOwner(userId) && isValidUser(incoming()) 
+                     && incoming().email == existing().email 
+                     && (incoming().subscriptionTier == existing().subscriptionTier || isAdmin())
+                     && (incoming().isAuthor == existing().isAuthor || isAdmin())
+                     && (incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'wishlist', 'purchasedBooks']) 
+                         || isAdmin());
+    }
+
+    // New: Applications
+    match /applications/{appId} {
+      function isValidApplication(data) {
+        return data.userId == request.auth.uid
+            && data.status in ['pending', 'approved', 'rejected']
+            && data.bio is string && data.bio.size() <= 5000
+            && (data.portfolioUrl == null || (data.portfolioUrl is string && data.portfolioUrl.size() <= 500))
+            && data.createdAt is timestamp;
+      }
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isVerified() && isValidApplication(incoming()) && isValidId(appId);
+      allow update: if isAdmin();
+    }
+
+    // New: Audit Logs
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn(); // Any signed in user can trigger an audit log (e.g. action logging)
+      allow update, delete: if false;
+    }
+
+    // 3. Transactions
+    match /transactions/{transactionId} {
+      function isValidTransaction(data) {
+        return data.userId == request.auth.uid
+            && (data.bookId == null || (data.bookId is string && data.bookId.size() <= 128))
+            && (data.authorId == null || (data.authorId is string && data.authorId.size() <= 128))
+            && data.amount is number
+            && data.type in ['purchase', 'subscription']
+            && data.status == 'successful'
+            && (data.createdAt is timestamp || data.timestamp is timestamp);
+      }
+
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin() || resource.data.authorId == request.auth.uid);
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin() || resource.data.authorId == request.auth.uid);
+      
+      allow create: if isVerified() && isValidTransaction(incoming()) && isValidId(transactionId);
+    }
+
+    // 4. Subscriptions
+    match /subscriptions/{subId} {
+      function isValidSubscription(data) {
+        return data.userId == request.auth.uid
+            && data.tier in ['monthly', 'yearly']
+            && data.status in ['active', 'expired', 'cancelled']
+            && data.startDate is timestamp
+            && data.endDate is timestamp;
+      }
+
+      allow get: if isSignedIn() && (isOwner(resource.data.userId) || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      
+      allow create: if isVerified() && isValidSubscription(incoming()) && isValidId(subId);
+      allow update: if isAdmin(); // Only admin/system can update subscription status
+    }
+
+    // 5. Reviews
+    match /reviews/{reviewId} {
+      function isValidReview(data) {
+        return data.userId == request.auth.uid
+            && data.bookId is string
+            && data.rating is number && data.rating >= 1 && data.rating <= 5
+            && (data.comment == null || (data.comment is string && data.comment.size() <= 1000));
+      }
+
+      allow read: if true;
+      allow create: if isVerified() && isValidReview(incoming()) && isValidId(reviewId);
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // 7. Collections
+    match /collections/{collectionId} {
+      function isValidCollection(data) {
+        return data.title is string && data.title.size() <= 200
+            && data.bookIds is list
+            && data.type in ['staff_pick', 'curated', 'thematic']
+            && (data.description == null || (data.description is string && data.description.size() <= 1000))
+            && (data.isActive == null || data.isActive is bool);
+      }
+
+      allow read: if true;
+      allow create, update, delete: if isAdmin() && isValidCollection(incoming()) && isValidId(collectionId);
+    }
+
+    // 6. Admins (lookup collection)
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if false; // Only manageable via Firebase Console or special script
+    }
+  }
+}

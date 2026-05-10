@@ -1,0 +1,158 @@
+{
+  "entities": {
+    "Book": {
+      "title": "Book",
+      "description": "An ebook available for purchase or subscription reading.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "author": { "type": "string" },
+        "authorId": { "type": "string" },
+        "isbn13": { "type": "string" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "coverUrl": { "type": "string" },
+        "pdfUrl": { "type": "string" },
+        "previewUrl": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "isFree": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["draft", "pending", "published"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "author", "isbn13", "category", "price", "coverUrl", "pdfUrl"]
+    },
+    "AuthorApplication": {
+      "title": "AuthorApplication",
+      "description": "A request from a user to become a verified author.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "bio": { "type": "string" },
+        "portfolioUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "status", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "A record of system or admin actions for accountability.",
+      "type": "object",
+      "properties": {
+        "action": { "type": "string" },
+        "performedBy": { "type": "string" },
+        "entityId": { "type": "string" },
+        "details": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["action", "performedBy", "timestamp"]
+    },
+    "Purchase": {
+      "title": "Purchase",
+      "description": "A record of a book purchase by a user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "bookId": { "type": "string" },
+        "amount": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "tx_ref": { "type": "string" }
+      },
+      "required": ["userId", "bookId", "amount", "timestamp"]
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "description": "A record of a user's subscription tier.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "tier": { "type": "string", "enum": ["monthly", "yearly"] },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["active", "expired", "cancelled"] }
+      },
+      "required": ["userId", "tier", "startDate", "endDate", "status"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "A book review and rating.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userDisplayName": { "type": "string" },
+        "bookId": { "type": "string" },
+        "rating": { "type": "number", "minimum": 1, "maximum": 5 },
+        "comment": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "bookId", "rating"]
+    },
+    "User": {
+      "title": "User",
+      "description": "A user profile.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "subscriptionTier": { "type": "string" },
+        "isPremium": { "type": "boolean" },
+        "isAuthor": { "type": "boolean" },
+        "wishlist": { "type": "array", "items": { "type": "string" } },
+        "followingAuthors": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "email"]
+    },
+    "Collection": {
+      "title": "Collection",
+      "description": "A curated group of books (e.g., Staff Picks, Summer Reading).",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "bookIds": { "type": "array", "items": { "type": "string" } },
+        "type": { "type": "string", "enum": ["staff_pick", "curated", "thematic"] },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "bookIds", "type", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/books/{bookId}": {
+      "schema": "Book",
+      "description": "Store for ebooks."
+    },
+    "/applications/{appId}": {
+      "schema": "AuthorApplication",
+      "description": "Applications to become an author."
+    },
+    "/auditLogs/{logId}": {
+      "schema": "AuditLog",
+      "description": "System audit logs."
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Purchase",
+      "description": "Records of individual book and subscription transactions."
+    },
+    "/subscriptions/{subId}": {
+      "schema": "Subscription",
+      "description": "User subscription records."
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and settings."
+    },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "User reviews for books."
+    },
+    "/collections/{collectionId}": {
+      "schema": "Collection",
+      "description": "Curated collections of books."
+    }
+  }
+}

@@ -1,0 +1,13 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
+@import "tailwindcss";
+@import "react-quill/dist/quill.snow.css";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", serif;
+  --color-brand: #2563eb; /* blue-600 */
+  --color-brand-dark: #1e3a8a; /* blue-900 */
+  --color-accent: #f97316; /* orange-500 */
+  --color-paper: #f8fafc; /* slate-50 */
+}
+

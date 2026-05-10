@@ -15,7 +15,7 @@ import { EpubPreview } from "../components/books/EpubPreview";
 
 export function BookDetails() {
   const { id } = useParams();
-  const { user, profile, signIn } = useAuth();
+  const { user, profile, signIn, isAdmin } = useAuth();
   const [book, setBook] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showPreview, setShowPreview] = useState(false);
@@ -366,10 +366,11 @@ export function BookDetails() {
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
   if (!book) return <div className="flex h-screen items-center justify-center">Book not found.</div>;
 
+  const isAuthor = book && profile && (book.authorId === profile.authorId || profile.isAuthor && book.author === profile.displayName);
   const hasPurchased = profile?.purchasedBooks?.includes(book.id) || profile?.isPremium;
   const isInWishlist = profile?.wishlist?.includes(book.id);
   const isFree = book.price === 0;
-  const canDownload = hasPurchased || isFree;
+  const canDownload = hasPurchased || isFree || isAdmin || isAuthor;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">

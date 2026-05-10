@@ -46,21 +46,35 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, maxPages = 10 }) =>
             if (context) {
               canvas.height = viewport.height;
               canvas.width = viewport.width;
-              canvas.className = "mb-8 w-full shadow-2xl rounded-sm border border-slate-200 bg-white";
+              canvas.className = "mb-8 w-full shadow-2xl rounded-sm border border-slate-200 bg-white opacity-0 transition-opacity duration-500";
               
-              containerRef.current.appendChild(canvas);
+              if (containerRef.current) {
+                containerRef.current.appendChild(canvas);
+              }
               
               await (page as any).render({
                 canvasContext: context,
                 viewport: viewport
               }).promise;
+
+              // Make the page visible after rendering
+              canvas.classList.remove('opacity-0');
+              
+              // Hide loading indicator as soon as the first page is ready
+              if (i === 1 && active) {
+                setLoading(false);
+              }
             }
           }
         }
       } catch (err: any) {
         console.error("Error loading PDF:", err);
-        if (active) setError("Could not load preview. Please try again later.");
+        if (active) {
+          setError("Could not load preview. Please try again later.");
+          setLoading(false);
+        }
       } finally {
+        // Ensure loading is false even if loop completes or breaks
         if (active) setLoading(false);
       }
     };

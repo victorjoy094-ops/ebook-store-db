@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
-import { doc, getDoc, updateDoc, arrayUnion, setDoc, serverTimestamp, addDoc, collection } from "firebase/firestore";
+import { doc, getDoc, updateDoc, arrayUnion, serverTimestamp, addDoc, collection } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../contexts/AuthContext";
-import { CheckCircle, Download, BookOpen, ArrowRight, Loader2 } from "lucide-react";
+import { CheckCircle, Download, BookOpen, ArrowRight, Loader2, AlertCircle } from "lucide-react";
 import { motion } from "motion/react";
+import axios from "axios";
+import toast from "react-hot-toast";
 
 export function PurchaseSuccess() {
   const [searchParams] = useSearchParams();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const [verifying, setVerifying] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [purchasedBook, setPurchasedBook] = useState<any>(null);
@@ -20,55 +22,67 @@ export function PurchaseSuccess() {
   useEffect(() => {
     async function verifyPayment() {
       if (!user) return;
+      
+      // If we don't have a transaction_id from the redirect, handle error
+      if (!transaction_id) {
+        setError("Missing transaction details. Please contact support.");
+        setVerifying(false);
+        return;
+      }
+
       if (status !== "successful" && status !== "completed") {
-        setError("Payment was not successful. Please try again.");
+        setError("Payment was not successful. Please try again or contact support.");
         setVerifying(false);
         return;
       }
 
       try {
-        // In a real app, we'd call a backend to verify transaction_id with Flutterwave
-        // For this applet, we'll trust the status param but check if we already processed it
-        
-        // Extract metadata if we stored it in tx_ref or elsewhere
-        // Here we'll just assume success for demo purposes if status is successful
-        
-        // Update user profile
-        const userRef = doc(db, "users", user.uid);
-        
-        // If it's a book purchase (we can find out from tx_ref or metadata)
-        // For simplicity, let's assume we store the bookId in tx_ref if it's jmbooks-bookid-timestamp
-        const parts = tx_ref?.split('-') || [];
-        const bookId = parts[1]; // jmbooks-ID-timestamp
+        // Call backend to verify transaction_id with Flutterwave
+        const response = await axios.get(`/api/payments/verify/${transaction_id}`);
+        const data = response.data.data;
 
-        if (bookId) {
+        if (response.data.status !== "success" || data.status !== "successful") {
+          throw new Error("Payment verification failed on server");
+        }
+
+        // Verification successful, now update user profile based on metadata
+        const userRef = doc(db, "users", user.uid);
+        const metadata = data.meta || {};
+        const bookId = metadata.book_id;
+        const type = metadata.type; // 'purchase' or 'subscription'
+
+        if (type === "purchase" && bookId) {
             const bookDoc = await getDoc(doc(db, "books", bookId));
             if (bookDoc.exists()) {
-                setPurchasedBook({ id: bookDoc.id, ...bookDoc.data() });
+                const bookData = bookDoc.data();
+                setPurchasedBook({ id: bookDoc.id, ...bookData });
+                
                 await updateDoc(userRef, {
                     purchasedBooks: arrayUnion(bookId)
                 });
 
-                // Record Transaction
+                // Record Transaction in Firestore
                 await addDoc(collection(db, "transactions"), {
                     userId: user.uid,
                     email: user.email,
                     name: user.displayName,
                     bookId: bookId,
-                    authorId: bookDoc.data().authorId || "SYSTEM",
-                    amount: bookDoc.data().price,
+                    bookTitle: bookData.title,
+                    amount: data.amount,
+                    currency: data.currency,
                     type: "purchase",
                     tx_ref: tx_ref,
+                    flw_id: transaction_id,
                     status: "successful",
-                    referral_id: localStorage.getItem("referral_id"),
+                    referral_id: metadata.referral_id || localStorage.getItem("referral_id"),
                     createdAt: serverTimestamp()
                 });
             }
-        } else {
-            // Check if it's a subscription
+        } else if (type === "subscription") {
             await updateDoc(userRef, {
                 subscriptionTier: "monthly", 
-                isPremium: true
+                isPremium: true,
+                subscriptionExpires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
             });
 
             // Record Subscription Transaction
@@ -77,28 +91,48 @@ export function PurchaseSuccess() {
                 email: user.email,
                 name: user.displayName,
                 type: "subscription",
-                amount: 5, // Default monthly
+                amount: data.amount,
+                currency: data.currency,
                 tx_ref: tx_ref,
+                flw_id: transaction_id,
                 status: "successful",
-                referral_id: localStorage.getItem("referral_id"),
+                referral_id: metadata.referral_id || localStorage.getItem("referral_id"),
                 createdAt: serverTimestamp()
             });
+        } else {
+            // Fallback if metadata is missing (e.g. jmbooks-ID-timestamp)
+            const parts = tx_ref?.split('-') || [];
+            const fallbackBookId = parts[1];
+            
+            if (fallbackBookId && fallbackBookId !== 'sub') {
+                const bookDoc = await getDoc(doc(db, "books", fallbackBookId));
+                if (bookDoc.exists()) {
+                    setPurchasedBook({ id: bookDoc.id, ...bookDoc.data() });
+                    await updateDoc(userRef, {
+                        purchasedBooks: arrayUnion(fallbackBookId)
+                    });
+                }
+            } else {
+                // Assume generic premium
+                await updateDoc(userRef, { isPremium: true });
+            }
         }
         
         // Clear referral after success
         localStorage.removeItem("referral_id");
-      } catch (err) {
+        toast.success("Payment verified and account updated!");
+      } catch (err: any) {
         console.error("Verification error:", err);
-        setError("Failed to update your profile. Please contact support.");
+        setError(err.response?.data?.message || "Failed to verify your payment. Please contact support.");
       } finally {
         setVerifying(false);
       }
     }
 
-    if (user) {
+    if (user && verifying) {
         verifyPayment();
     }
-  }, [user, status, tx_ref]);
+  }, [user, status, tx_ref, transaction_id, verifying]);
 
   if (verifying) {
     return (

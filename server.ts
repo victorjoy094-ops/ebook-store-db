@@ -25,7 +25,7 @@ async function startServer() {
       const response = await axios.post(
         "https://api.flutterwave.com/v3/payments",
         {
-          tx_ref: tx_ref || `jmbooks-${Date.now()}`,
+          tx_ref: tx_ref || `jmbooks-${book_id || 'sub'}-${Date.now()}`,
           amount,
           currency: "USD",
           redirect_url: `${process.env.APP_URL}/payment-success`,
@@ -56,6 +56,26 @@ async function startServer() {
     } catch (error: any) {
       console.error("Flutterwave error:", error.response?.data || error.message);
       res.status(500).json({ error: error.response?.data || "Payment initialization failed" });
+    }
+  });
+
+  // Flutterwave Verify Payment
+  app.get("/api/payments/verify/:transaction_id", async (req, res) => {
+    try {
+      const { transaction_id } = req.params;
+      const response = await axios.get(
+        `https://api.flutterwave.com/v3/transactions/${transaction_id}/verify`,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`
+          }
+        }
+      );
+
+      res.json(response.data);
+    } catch (error: any) {
+      console.error("Verification error:", error.response?.data || error.message);
+      res.status(500).json({ error: error.response?.data || "Verification failed" });
     }
   });
 

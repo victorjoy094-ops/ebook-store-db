@@ -1,21 +1,24 @@
 import React, { useState, useEffect } from "react";
-import ReactQuill from "react-quill";
+import ReactQuill from "react-quill-new";
 import { useAuth } from "../contexts/AuthContext";
 import { db, storage } from "../lib/firebase";
-import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, deleteDoc, orderBy } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, deleteDoc, orderBy, updateDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { motion, AnimatePresence } from "motion/react";
-import { BookOpen, Upload, Plus, CheckCircle2, AlertCircle, Loader2, BarChart3, Database, Trash2, Edit3, UserPlus, DollarSign } from "lucide-react";
+import { BookOpen, Upload, Plus, CheckCircle2, AlertCircle, Loader2, BarChart3, Database, Trash2, Edit3, UserPlus, DollarSign, Headphones, FileText, Megaphone } from "lucide-react";
 import toast from "react-hot-toast";
 
-type Tab = "dashboard" | "upload" | "manage" | "earnings";
+type Tab = "dashboard" | "upload" | "manage" | "earnings" | "journals";
 
 export function PublisherPortal() {
   const { user, profile, signIn, loading: authLoading, walletAddress, connectWallet } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [loading, setLoading] = useState(false);
+  const [requestingAudio, setRequestingAudio] = useState<string | null>(null);
   const [application, setApplication] = useState<any>(null);
   const [myBooks, setMyBooks] = useState<any[]>([]);
+  const [myJournalSubmissions, setMyJournalSubmissions] = useState<any[]>([]);
+  const [myPublishedJournals, setMyPublishedJournals] = useState<any[]>([]);
   const [myTransactions, setMyTransactions] = useState<any[]>([]);
   const [fetching, setFetching] = useState(true);
 
@@ -31,6 +34,14 @@ export function PublisherPortal() {
   });
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+
+  // Journal Submission State
+  const [journalData, setJournalData] = useState({
+    title: "",
+    category: "Science",
+    abstract: "",
+  });
+  const [journalFile, setJournalFile] = useState<File | null>(null);
 
   // Application Form
   const [appData, setAppData] = useState({ bio: "", portfolioUrl: "" });
@@ -84,6 +95,22 @@ export function PublisherPortal() {
             return timeB - timeA;
           });
           setMyTransactions(sortedTx);
+
+          // Fetch My Journal Submissions
+          const journalsQuery = query(
+            collection(db, "journalSubmissions"),
+            where("authorId", "==", user?.uid)
+          );
+          const journalsSnap = await getDocs(journalsQuery);
+          setMyJournalSubmissions(journalsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+
+          // Fetch My Published Journals
+          const publishedJournalsQuery = query(
+            collection(db, "journals"),
+            where("authorId", "==", user?.uid)
+          );
+          const publishedJournalsSnap = await getDocs(publishedJournalsQuery);
+          setMyPublishedJournals(publishedJournalsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
         }
       } catch (err) {
         console.error("Error fetching publisher data:", err);
@@ -180,6 +207,146 @@ export function PublisherPortal() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRequestAudiobook = async (bookId: string) => {
+    if (!import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY) {
+      toast.error("Payment system not initialized. Contact admin.");
+      return;
+    }
+
+    const book = myBooks.find(b => b.id === bookId);
+
+    window.FlutterwaveCheckout({
+      public_key: import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY,
+      tx_ref: `audiobook-svc-${bookId}-${Date.now()}`,
+      amount: 10.00,
+      currency: "USD",
+      payment_options: "card,mobilemoney,ussd",
+      customer: {
+        email: user?.email || "",
+        phone_number: "",
+        name: user?.displayName || "Guest Reader",
+      },
+      customizations: {
+        title: "AI Audiobook Service",
+        description: `Audiobook conversion fee for "${book?.title}"`,
+        logo: "https://st2.depositphotos.com/4403291/7418/v/450/depositphotos_74189661-stock-illustration-abstract-symbol-book-icon-vector.jpg",
+      },
+      callback: async (response: any) => {
+        if (response.status === "successful") {
+          setRequestingAudio(bookId);
+          try {
+            const bookRef = doc(db, "books", bookId);
+            await updateDoc(bookRef, {
+              audiobookRequestStatus: "paid"
+            });
+
+            await addDoc(collection(db, "transactions"), {
+              userId: user?.uid,
+              userName: user?.displayName,
+              email: user?.email,
+              bookId: bookId,
+              amount: 10,
+              type: "audiobook_service",
+              status: "successful",
+              transactionId: response.transaction_id,
+              createdAt: serverTimestamp()
+            });
+
+            setMyBooks(myBooks.map(b => b.id === bookId ? { ...b, audiobookRequestStatus: "paid" } : b));
+            toast.success("Payment successful! Admin will convert your book shortly.");
+          } catch (err) {
+            toast.error("Error updating status after payment. Contact support.");
+          } finally {
+            setRequestingAudio(null);
+          }
+        } else {
+          toast.error("Payment failed.");
+        }
+      },
+      onclose: () => {},
+    });
+  };
+
+  const handleJournalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !journalFile) {
+      toast.error("Please select a manuscript file.");
+      return;
+    }
+
+    if (!import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY) {
+      toast.error("Payment system not initialized. Contact admin.");
+      return;
+    }
+
+    window.FlutterwaveCheckout({
+      public_key: import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY,
+      tx_ref: `journal-vetting-${user.uid}-${Date.now()}`,
+      amount: 40.00,
+      currency: "USD",
+      payment_options: "card,mobilemoney,ussd",
+      customer: {
+        email: user?.email || "",
+        phone_number: "",
+        name: user?.displayName || "Guest Reader",
+      },
+      customizations: {
+        title: "Journal Vetting Fee",
+        description: `Vetting payment for "${journalData.title}"`,
+        logo: "https://st2.depositphotos.com/4403291/7418/v/450/depositphotos_74189661-stock-illustration-abstract-symbol-book-icon-vector.jpg",
+      },
+      callback: async (response: any) => {
+        if (response.status === "successful") {
+          setLoading(true);
+          try {
+            const fileRef = ref(storage, `journalSubmissions/${Date.now()}-${journalFile.name}`);
+            const fileSnap = await uploadBytes(fileRef, journalFile);
+            const fileUrl = await getDownloadURL(fileSnap.ref);
+
+            const submissionData = {
+              authorId: user.uid,
+              authorName: user.displayName,
+              title: journalData.title,
+              category: journalData.category,
+              abstract: journalData.abstract,
+              fileUrl,
+              status: "submitted",
+              paymentStatus: "paid",
+              transactionId: response.transaction_id,
+              createdAt: serverTimestamp()
+            };
+
+            await addDoc(collection(db, "journalSubmissions"), submissionData);
+            
+            await addDoc(collection(db, "auditLogs"), {
+              action: "JOURNAL_SUBMISSION",
+              performedBy: user.uid,
+              details: `Author ${user.displayName} paid $40 and submitted journal ${journalData.title}`,
+              timestamp: serverTimestamp()
+            });
+
+            toast.success("Journal manuscript submitted! $40 fee processed.");
+            setJournalData({ title: "", category: "Science", abstract: "" });
+            setJournalFile(null);
+            
+            const jq = query(collection(db, "journalSubmissions"), where("authorId", "==", user.uid));
+            const jSnap = await getDocs(jq);
+            setMyJournalSubmissions(jSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+          } catch (err) {
+            toast.error("Submission error after payment. Please contact support with ID: " + response.transaction_id);
+          } finally {
+            setLoading(false);
+          }
+        } else {
+          toast.error("Payment was not successful.");
+        }
+      },
+      onclose: () => {
+        console.log("Modal closed");
+      },
+    });
   };
 
   if (authLoading || (user && fetching)) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin text-brand" size={40} /></div>;
@@ -338,6 +505,9 @@ export function PublisherPortal() {
     const totalGross = myTransactions.reduce((acc, t) => acc + (t.amount || 0), 0);
     const totalRoyalty = totalGross * 0.7;
 
+    const totalJournalReads = myPublishedJournals.reduce((acc, j) => acc + (j.readCount || 0), 0);
+    const journalEarnings = totalJournalReads * 0.10; // $0.10 per read split
+
     return (
     <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
       <div className="mb-12 flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
@@ -372,6 +542,7 @@ export function PublisherPortal() {
           {[
             { id: "dashboard", icon: BarChart3, label: "Overview" },
             { id: "manage", icon: Database, label: "My Books" },
+            { id: "journals", icon: FileText, label: "Journals" },
             { id: "earnings", icon: DollarSign, label: "Earnings" },
             { id: "upload", icon: Plus, label: "New Title" }
           ].map(tab => (
@@ -442,6 +613,17 @@ export function PublisherPortal() {
                 </div>
              </div>
 
+             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-white p-8 border-l-4 border-l-blue-500 shadow-sm">
+                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Journal Reads</p>
+                   <p className="mt-2 text-3xl font-black text-slate-900">{totalJournalReads}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-8 border-l-4 border-l-green-500 shadow-sm">
+                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Journal Earnings (@$0.10)</p>
+                   <p className="mt-2 text-3xl font-black text-green-600">${journalEarnings.toFixed(2)}</p>
+                </div>
+             </div>
+
              <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
                 <table className="w-full text-left font-sans">
                   <thead className="bg-slate-50 border-b border-slate-200">
@@ -476,6 +658,96 @@ export function PublisherPortal() {
           </motion.div>
         )}
 
+        {activeTab === "journals" && (
+          <motion.div 
+            key="journals"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-12"
+          >
+            <form onSubmit={handleJournalSubmit} className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm space-y-6">
+                <div className="flex items-center justify-between">
+                    <h3 className="text-xl font-black text-slate-900 border-l-4 border-brand pl-4">Submit New Journal</h3>
+                    <div className="bg-brand/5 text-brand px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest border border-brand/10">
+                        Vetting Fee: $40
+                    </div>
+                </div>
+                
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Journal Title</label>
+                        <input required value={journalData.title} onChange={e => setJournalData({...journalData, title: e.target.value})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none border border-slate-200 focus:ring-1 focus:ring-brand" />
+                    </div>
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Category</label>
+                        <select value={journalData.category} onChange={e => setJournalData({...journalData, category: e.target.value})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none border border-slate-200 focus:ring-1 focus:ring-brand">
+                            {["Science", "Technology", "Economics", "Humanities", "Medicine", "Arts"].map(c => <option key={c}>{c}</option>)}
+                        </select>
+                    </div>
+                </div>
+                
+                <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Abstract / Summary</label>
+                    <textarea required rows={4} value={journalData.abstract} onChange={e => setJournalData({...journalData, abstract: e.target.value})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none border border-slate-200 focus:ring-1 focus:ring-brand" />
+                </div>
+
+                <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Manuscript (PDF)</label>
+                    <div className="relative flex h-32 items-center justify-center rounded border-2 border-dashed border-slate-200 bg-slate-50 transition-colors hover:border-brand">
+                        <input type="file" accept="application/pdf" onChange={e => setJournalFile(e.target.files?.[0] || null)} className="absolute inset-0 cursor-pointer opacity-0" />
+                        <div className="flex flex-col items-center gap-2 text-slate-400">
+                            {journalFile ? <CheckCircle2 size={24} className="text-green-500" /> : <Upload size={20} />}
+                            <p className="text-[10px] font-bold uppercase">{journalFile ? journalFile.name : "Select PDF Document"}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <button disabled={loading} className="w-full rounded-full bg-slate-900 py-5 text-sm font-black uppercase tracking-widest text-white shadow-xl transition-all hover:bg-brand active:scale-95 disabled:opacity-50">
+                    {loading ? <Loader2 className="mx-auto animate-spin" /> : "Pay $40 and Submit for Vetting"}
+                </button>
+            </form>
+
+            <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+                <div className="bg-slate-50 border-b border-slate-200 px-6 py-4">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Your Journal Submissions</h3>
+                </div>
+                <table className="w-full text-left">
+                    <thead className="border-b border-slate-200">
+                        <tr>
+                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Journal Title</th>
+                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Status</th>
+                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Payment</th>
+                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Submitted</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {myJournalSubmissions.map(sub => (
+                            <tr key={sub.id}>
+                                <td className="px-6 py-4">
+                                    <p className="text-sm font-bold text-slate-900">{sub.title}</p>
+                                    <p className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">{sub.category}</p>
+                                </td>
+                                <td className="px-6 py-4">
+                                    <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[8px] font-black uppercase tracking-widest ${
+                                        sub.status === "published" ? "bg-green-50 text-green-600" : 
+                                        sub.status === "vetting" ? "bg-blue-50 text-brand" : "bg-slate-50 text-slate-400"
+                                    }`}>
+                                        {sub.status}
+                                    </span>
+                                </td>
+                                <td className="px-6 py-4">
+                                    <span className="text-[10px] font-black text-green-600 uppercase">PAID $40</span>
+                                </td>
+                                <td className="px-6 py-4 text-xs text-slate-500">
+                                    {sub.createdAt?.toDate ? sub.createdAt.toDate().toLocaleDateString() : 'New'}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+          </motion.div>
+        )}
         {activeTab === "manage" && (
           <motion.div 
             key="manage"
@@ -528,7 +800,30 @@ export function PublisherPortal() {
                       </td>
                       <td className="px-6 py-4 text-sm font-bold text-slate-900">${book.price?.toFixed(2)}</td>
                       <td className="px-6 py-4">
-                        <div className="flex gap-4">
+                        <div className="flex items-center gap-4">
+                          {!book.hasAudiobook && (
+                            <button
+                              onClick={() => handleRequestAudiobook(book.id)}
+                              disabled={requestingAudio === book.id || book.audiobookRequestStatus === 'paid'}
+                              className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] font-black uppercase tracking-widest transition-all ${
+                                book.audiobookRequestStatus === 'paid'
+                                  ? "bg-green-50 text-green-600"
+                                  : "bg-brand/10 text-brand hover:bg-brand/20"
+                              }`}
+                            >
+                              {requestingAudio === book.id ? (
+                                <Loader2 size={12} className="animate-spin" />
+                              ) : (
+                                <Headphones size={12} />
+                              )}
+                              {book.audiobookRequestStatus === 'paid' ? "Paid" : "Get AI Audio ($10)"}
+                            </button>
+                          )}
+                          {book.hasAudiobook && (
+                            <div className="flex items-center gap-1 rounded bg-green-50 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-green-600">
+                              <CheckCircle2 size={10} /> Audio Live
+                            </div>
+                          )}
                           <button onClick={() => toast.error("Editing coming soon")} className="text-slate-400 hover:text-brand transition-colors"><Edit3 size={16} /></button>
                           <button onClick={async () => {
                             if (confirm("Are you sure you want to delete this manuscript? This action cannot be undone.")) {

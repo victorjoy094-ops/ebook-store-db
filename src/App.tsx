@@ -18,6 +18,9 @@ import { PublisherPortal } from "./pages/PublisherPortal";
 import AuthorProfile from "./pages/AuthorProfile";
 import About from "./pages/About";
 import Contact from "./pages/Contact";
+import { TermsAndPrivacy } from "./pages/TermsAndPrivacy";
+import Journals from "./pages/Journals";
+import JournalDetail from "./pages/JournalDetail";
 import { AuthProvider } from "./contexts/AuthContext";
 import { Toaster } from "react-hot-toast";
 import { OnboardingModal } from "./components/auth/OnboardingModal";
@@ -44,6 +47,9 @@ export default function App() {
                 <Route path="/author/:id" element={<AuthorProfile />} />
                 <Route path="/about" element={<About />} />
                 <Route path="/contact" element={<Contact />} />
+                <Route path="/terms-privacy" element={<TermsAndPrivacy />} />
+                <Route path="/journals" element={<Journals />} />
+                <Route path="/journal/:id" element={<JournalDetail />} />
               </Routes>
             </main>
             <Footer />

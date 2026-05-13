@@ -17,12 +17,16 @@ export function Footer() {
             <div className="flex gap-6 text-[11px] font-bold uppercase tracking-widest text-slate-400">
               <Link to="/about" className="hover:text-white">About</Link>
               <Link to="/contact" className="hover:text-white">Contact</Link>
-              <a href="#" className="hover:text-white">Terms</a>
-              <a href="#" className="hover:text-white">Privacy</a>
+              <Link to="/terms-privacy" className="hover:text-white">Terms and Privacy</Link>
             </div>
           </div>
           
           <div className="flex flex-col items-center gap-8 md:flex-row">
+            <div className="flex flex-col items-end gap-1 text-[11px] text-slate-400">
+              <span className="font-bold">University of Calabar Bookshop</span>
+              <span>Calabar, Cross River State, Nigeria</span>
+              <span className="text-brand font-black">+234-8032548143</span>
+            </div>
             <div className="flex items-center gap-3">
               <span className="text-[11px] text-slate-400">Secured by</span>
               <div className="flex items-center rounded bg-white px-2 py-0.5 font-black italic text-slate-900 text-[10px]">

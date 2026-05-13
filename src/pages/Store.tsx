@@ -3,6 +3,7 @@ import { useSearchParams, Link } from "react-router-dom";
 import { collection, query, getDocs, orderBy, where } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { BookCard } from "../components/books/BookCard";
+import { AdSpace } from "../components/ads/AdSpace";
 import { Search, Filter, SlidersHorizontal, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -63,28 +64,6 @@ export function Store() {
         const snapshot = await getDocs(q);
         let booksData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
         
-        // Manual Seed for requested book if not already present
-        const requestedISBN = "978-978-68-2451-2";
-        const hasRequestedBook = booksData.some(b => b.isbn13 === requestedISBN);
-        
-        if (!hasRequestedBook) {
-          const seededBook = {
-            id: "seeded-fundamentals-business",
-            title: "Fundamentals of Business Management",
-            author: "Joy S. Mbotor",
-            authorId: "joy-s-mbotor", // Placeholder or fetch if possible
-            isbn13: requestedISBN,
-            category: "Educational Textbook",
-            description: "Fundamentals of Business Management is a comprehensive guide that bridges theory and practice, equipping students, entrepreneurs, and business leaders with the knowledge to thrive in today's dynamic business environment. Covering core topics such as corporate governance, digital transformation, sustainability, and crisis management, this book blends global insights with practical case studies to inspire ethical leadership and strategic thinking.",
-            price: 5.00,
-            coverUrl: "/book_cover.png", // User uploaded cover
-            status: "published",
-            createdAt: new Date().toISOString(),
-            isSeeded: true
-          };
-          booksData = [seededBook, ...booksData];
-        }
-
         setBooks(booksData);
       } catch (error) {
         console.error("Error fetching books:", error);
@@ -211,6 +190,8 @@ export function Store() {
             </div>
           </div>
         </div>
+
+        <AdSpace position="store_sidebar" className="mb-12 rounded-xl overflow-hidden" />
 
         {loading ? (
           <div className="grid grid-cols-2 gap-6 md:grid-cols-3 xl:grid-cols-4">

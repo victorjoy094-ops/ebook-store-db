@@ -3,10 +3,11 @@ import { useAuth } from "../contexts/AuthContext";
 import { db, storage } from "../lib/firebase";
 import { collection, addDoc, serverTimestamp, getDocs, doc, deleteDoc, updateDoc, query, orderBy } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { Plus, Upload, Loader2, Check, Settings, BarChart3, Database, Trash2, Edit3, User as UserIcon, DollarSign, BookOpen } from "lucide-react";
+import { Plus, Upload, Loader2, Check, Settings, BarChart3, Database, Trash2, Edit3, User as UserIcon, DollarSign, BookOpen, Mail, Headphones, Megaphone, FileText } from "lucide-react";
 import toast from "react-hot-toast";
+import { generateAudiobookExcerpt } from "../services/geminiService";
 
-type AdminTab = "upload" | "manage" | "analytics" | "users" | "apps" | "logs" | "collections";
+type AdminTab = "upload" | "manage" | "analytics" | "users" | "apps" | "logs" | "collections" | "inbox" | "ads" | "journals";
 
 export function Admin() {
   const { user: adminUser, isAdmin } = useAuth();
@@ -18,7 +19,12 @@ export function Admin() {
   const [applications, setApplications] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [collections, setCollections] = useState<any[]>([]);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [ads, setAds] = useState<any[]>([]);
+  const [journalSubmissions, setJournalSubmissions] = useState<any[]>([]);
+  const [publishedJournals, setPublishedJournals] = useState<any[]>([]);
   const [editingBook, setEditingBook] = useState<any | null>(null);
+  const [generatingAudio, setGeneratingAudio] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
     title: "",
@@ -38,6 +44,13 @@ export function Admin() {
     type: "curated",
     bookIds: [] as string[],
     isActive: true
+  });
+
+  const [adForm, setAdForm] = useState({
+    title: "",
+    position: "home_hero",
+    code: "",
+    active: true
   });
 
   const [coverFile, setCoverFile] = useState<File | null>(null);
@@ -74,6 +87,18 @@ export function Admin() {
 
         const collsSnap = await getDocs(query(collection(db, "collections"), orderBy("createdAt", "desc")));
         setCollections(collsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+
+        const msgsSnap = await getDocs(query(collection(db, "contactMessages"), orderBy("createdAt", "desc")));
+        setMessages(msgsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+
+        const adsSnap = await getDocs(query(collection(db, "ads"), orderBy("createdAt", "desc")));
+        setAds(adsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+
+        const jSubSnap = await getDocs(query(collection(db, "journalSubmissions"), orderBy("createdAt", "desc")));
+        setJournalSubmissions(jSubSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+
+        const journalsSnap = await getDocs(query(collection(db, "journals"), orderBy("createdAt", "desc")));
+        setPublishedJournals(journalsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
       } catch (err) {
         console.error("Error fetching admin data:", err);
       }
@@ -306,6 +331,168 @@ export function Admin() {
     }
   };
 
+  const markMessageRead = async (id: string) => {
+    try {
+      await updateDoc(doc(db, "contactMessages", id), { status: "read" });
+      setMessages(messages.map(m => m.id === id ? { ...m, status: "read" } : m));
+    } catch (err) {
+      toast.error("Failed to update message.");
+    }
+  };
+
+  const deleteMessage = async (id: string) => {
+    if (!confirm("Delete this message?")) return;
+    try {
+      await deleteDoc(doc(db, "contactMessages", id));
+      setMessages(messages.filter(m => m.id !== id));
+      toast.success("Message deleted.");
+    } catch (err) {
+      toast.error("Delete failed.");
+    }
+  };
+
+  const handleGenerateAudio = async (book: any) => {
+    if (!book.description && !book.title) {
+      toast.error("Book needs a description to generate audio.");
+      return;
+    }
+
+    setGeneratingAudio(book.id);
+    try {
+      const textToRead = `Book: ${book.title}. Description: ${book.description}`;
+      const base64Audio = await generateAudiobookExcerpt(textToRead);
+      
+      if (!base64Audio) throw new Error("No audio generated");
+
+      // Convert base64 to Blob
+      const binary = atob(base64Audio);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: "audio/wav" });
+      const file = new File([blob], `audiobook-${book.id}.wav`, { type: "audio/wav" });
+
+      // Upload to Storage
+      const audioRef = ref(storage, `audiobooks/${book.id}-${Date.now()}.wav`);
+      const snap = await uploadBytes(audioRef, file);
+      const audioUrl = await getDownloadURL(snap.ref);
+
+      // Update Firestore
+      await updateDoc(doc(db, "books", book.id), {
+        audioUrl,
+        hasAudiobook: true
+      });
+
+      setBooks(books.map(b => b.id === book.id ? { ...b, audioUrl, hasAudiobook: true } : b));
+      
+      await addDoc(collection(db, "auditLogs"), {
+        action: "AUDIOBOOK_GENERATE",
+        performedBy: adminUser?.uid,
+        entityId: book.id,
+        details: `Generated AI audiobook for ${book.title}`,
+        timestamp: serverTimestamp()
+      });
+
+      toast.success("Audiobook generated successfully!");
+    } catch (err) {
+      console.error("Audio generation failed:", err);
+      toast.error("Failed to generate audiobook. Please try again.");
+    } finally {
+      setGeneratingAudio(null);
+    }
+  };
+
+  const handleAdSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const adData = {
+        ...adForm,
+        createdAt: serverTimestamp()
+      };
+      const docRef = await addDoc(collection(db, "ads"), adData);
+      
+      await addDoc(collection(db, "auditLogs"), {
+        action: "AD_CREATE",
+        performedBy: adminUser?.uid,
+        entityId: docRef.id,
+        details: `Created ad ${adForm.title} for ${adForm.position}`,
+        timestamp: serverTimestamp()
+      });
+
+      toast.success("Ad created!");
+      setAdForm({ title: "", position: "home_hero", code: "", active: true });
+      
+      const adsSnap = await getDocs(query(collection(db, "ads"), orderBy("createdAt", "desc")));
+      setAds(adsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      toast.error("Failed to create ad.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteAd = async (id: string, title: string) => {
+    if (!confirm(`Delete ad ${title}?`)) return;
+    try {
+      await deleteDoc(doc(db, "ads", id));
+      setAds(ads.filter(a => a.id !== id));
+      toast.success("Ad deleted.");
+    } catch (err) {
+      toast.error("Delete failed.");
+    }
+  };
+
+  const publishJournal = async (sub: any) => {
+    setLoading(true);
+    try {
+      const journalData = {
+        title: sub.title,
+        author: sub.authorName,
+        authorId: sub.authorId,
+        abstract: sub.abstract,
+        contentUrl: sub.fileUrl,
+        category: sub.category,
+        status: "published",
+        readCount: 0,
+        createdAt: serverTimestamp(),
+      };
+
+      const docRef = await addDoc(collection(db, "journals"), journalData);
+      
+      await updateDoc(doc(db, "journalSubmissions", sub.id), {
+        status: "published"
+      });
+
+      setJournalSubmissions(journalSubmissions.map(s => s.id === sub.id ? { ...s, status: "published" } : s));
+      setPublishedJournals([{ id: docRef.id, ...journalData }, ...publishedJournals]);
+
+      await addDoc(collection(db, "auditLogs"), {
+        action: "JOURNAL_PUBLISH",
+        performedBy: adminUser?.uid,
+        entityId: docRef.id,
+        details: `Published journal ${sub.title} from submission ${sub.id}`,
+        timestamp: serverTimestamp()
+      });
+
+      toast.success("Journal published to directory!");
+    } catch (err) {
+      toast.error("Failed to publish journal.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteJournal = async (id: string, title: string) => {
+    if (!confirm(`Delete published journal ${title}?`)) return;
+    try {
+      await deleteDoc(doc(db, "journals", id));
+      setPublishedJournals(publishedJournals.filter(j => j.id !== id));
+      toast.success("Journal removed.");
+    } catch (err) {
+      toast.error("Delete failed.");
+    }
+  };
+
   const totalRevenue = transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
 
   return (
@@ -327,6 +514,9 @@ export function Admin() {
             { id: "manage", icon: Database, label: "Library" },
             { id: "collections", icon: BookOpen, label: "Curated" },
             { id: "apps", icon: UserIcon, label: "Apps" },
+            { id: "inbox", icon: Mail, label: "Inbox" },
+            { id: "ads", icon: Megaphone, label: "Ads" },
+            { id: "journals", icon: FileText, label: "Journals" },
             { id: "users", icon: DollarSign, label: "Users" },
             { id: "analytics", icon: BarChart3, label: "Stats" },
             { id: "logs", icon: Database, label: "Logs" }
@@ -445,6 +635,25 @@ export function Admin() {
                           title="Publish Book"
                         >
                           <Check size={12} /> Publish
+                        </button>
+                      )}
+                      {adminUser?.email === "mbotorjoy@gmail.com" && (
+                        <button 
+                          onClick={() => handleGenerateAudio(book)}
+                          disabled={generatingAudio === book.id || (book.audiobookRequestStatus !== 'paid' && book.authorId !== 'SYSTEM')}
+                          className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] font-black uppercase tracking-widest transition-colors ${
+                            book.hasAudiobook 
+                              ? "bg-brand/10 text-brand hover:bg-brand/20" 
+                              : (book.audiobookRequestStatus === 'paid' || book.authorId === 'SYSTEM' ? "bg-slate-50 text-slate-400 hover:bg-slate-100" : "bg-slate-50 text-slate-200 cursor-not-allowed")
+                          }`}
+                          title={!book.hasAudiobook && book.audiobookRequestStatus !== 'paid' && book.authorId !== 'SYSTEM' ? "Waiting for author payment ($10)" : (book.hasAudiobook ? "Regenerate Audiobook" : "Generate Audiobook")}
+                        >
+                          {generatingAudio === book.id ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <Headphones size={12} />
+                          )}
+                          {book.hasAudiobook ? "Regenerate" : "AI Audio"}
                         </button>
                       )}
                       <button onClick={() => startEditing(book)} className="text-slate-400 hover:text-brand" title="Edit Book"><Edit3 size={16} /></button>
@@ -795,6 +1004,216 @@ export function Admin() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {activeTab === "inbox" && (
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex justify-between items-center">
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Contact Inbox</h3>
+              <p className="text-[10px] font-black uppercase tracking-widest text-brand">{messages.filter(m => m.status === 'unread').length} Unread</p>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {messages.map(msg => (
+                <div key={msg.id} className={`p-6 transition-colors ${msg.status === 'unread' ? 'bg-brand/5' : 'hover:bg-slate-50'}`}>
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-black text-slate-900">{msg.name}</span>
+                        <span className="text-[10px] text-slate-400">({msg.email})</span>
+                        {msg.status === 'unread' && <span className="h-2 w-2 rounded-full bg-brand"></span>}
+                      </div>
+                      <p className="text-xs font-bold text-brand uppercase tracking-widest">{msg.subject}</p>
+                      <p className="mt-4 text-slate-600 text-sm leading-relaxed whitespace-pre-wrap">{msg.message}</p>
+                      <p className="mt-4 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                        {msg.createdAt?.toDate ? msg.createdAt.toDate().toLocaleString() : 'N/A'}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      {msg.status === 'unread' && (
+                        <button 
+                          onClick={() => markMessageRead(msg.id)}
+                          className="flex items-center gap-1 rounded bg-white border border-slate-200 px-3 py-1.5 text-[8px] font-black uppercase tracking-widest text-slate-600 hover:border-brand hover:text-brand"
+                        >
+                          Mark as Read
+                        </button>
+                      )}
+                      <button 
+                        onClick={() => deleteMessage(msg.id)}
+                        className="flex items-center gap-1 rounded bg-white border border-slate-200 px-3 py-1.5 text-[8px] font-black uppercase tracking-widest text-slate-400 hover:border-red-200 hover:text-red-500"
+                      >
+                        <Trash2 size={10} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {messages.length === 0 && (
+                <div className="px-6 py-12 text-center text-sm italic text-slate-400">No messages found.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "ads" && (
+        <div className="space-y-12">
+          <form onSubmit={handleAdSubmit} className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm space-y-6">
+            <h3 className="text-lg font-bold text-slate-900">Add New Advertisement</h3>
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ad Title (internal)</label>
+                <input required value={adForm.title} onChange={e => setAdForm({...adForm, title: e.target.value})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none focus:ring-1 focus:ring-brand" placeholder="e.g. Summer Sale Banner" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Position</label>
+                <select value={adForm.position} onChange={e => setAdForm({...adForm, position: e.target.value})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none focus:ring-1 focus:ring-brand">
+                  <option value="home_hero">Home Hero Bottom</option>
+                  <option value="home_featured">Home Featured Middle</option>
+                  <option value="store_sidebar">Store Sidebar</option>
+                  <option value="book_details_bottom">Book Details Bottom</option>
+                </select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ad Code (HTML/Script)</label>
+              <textarea required rows={6} value={adForm.code} onChange={e => setAdForm({...adForm, code: e.target.value})} className="font-mono w-full rounded bg-slate-50 px-4 py-3 text-xs font-medium outline-none focus:ring-1 focus:ring-brand" placeholder="<div class='my-ad'>...</div>" />
+              <p className="text-[10px] text-slate-400">Paste your ad network snippet or custom HTML here.</p>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <input type="checkbox" checked={adForm.active} onChange={e => setAdForm({...adForm, active: e.target.checked})} id="ad-active" className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand" />
+              <label htmlFor="ad-active" className="text-sm font-bold text-slate-700">Set as Active</label>
+            </div>
+
+            <button disabled={loading} className="w-full rounded bg-brand py-4 text-sm font-black uppercase tracking-widest text-white shadow-md transition-opacity hover:opacity-90 disabled:opacity-50">
+              {loading ? <Loader2 className="mx-auto animate-spin" /> : "Deploy Advertisement"}
+            </button>
+          </form>
+
+          <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+            <div className="bg-slate-50 border-b border-slate-200 px-6 py-4">
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Configured Ads</h3>
+            </div>
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-slate-200">
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Ad Title</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Position</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Status</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {ads.map(ad => (
+                  <tr key={ad.id}>
+                    <td className="px-6 py-4">
+                      <p className="text-sm font-bold text-slate-900">{ad.title}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-brand">{ad.position.replace('_', ' ')}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[8px] font-black uppercase tracking-widest ${
+                          ad.active ? "bg-green-50 text-green-600" : "bg-slate-50 text-slate-400"
+                        }`}>
+                        {ad.active ? "Active" : "Inactive"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <button onClick={() => deleteAd(ad.id, ad.title)} className="text-slate-400 hover:text-red-500">
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {ads.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-12 text-center text-sm italic text-slate-400">No ads configured yet.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "journals" && (
+        <div className="space-y-12">
+            <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+                <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex justify-between items-center">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Journal Submissions (Vetting Required)</h3>
+                </div>
+                <table className="w-full text-left">
+                    <thead>
+                        <tr className="border-b border-slate-200">
+                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Journal Submission</th>
+                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Author</th>
+                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Status</th>
+                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {journalSubmissions.filter(s => s.status !== 'published').map(sub => (
+                            <tr key={sub.id}>
+                                <td className="px-6 py-4">
+                                    <p className="text-sm font-bold text-slate-900">{sub.title}</p>
+                                    <p className="text-[10px] font-medium text-brand uppercase tracking-widest">{sub.category}</p>
+                                </td>
+                                <td className="px-6 py-4 text-xs font-bold text-slate-600">{sub.authorName}</td>
+                                <td className="px-6 py-4">
+                                    <span className="rounded bg-blue-50 px-2 py-0.5 text-[8px] font-black uppercase tracking-widest text-brand">{sub.status}</span>
+                                </td>
+                                <td className="px-6 py-4">
+                                    <div className="flex gap-2">
+                                        <a href={sub.fileUrl} target="_blank" rel="noopener noreferrer" className="rounded bg-slate-100 px-3 py-1.5 text-[8px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-200">Review PDF</a>
+                                        <button 
+                                            onClick={() => publishJournal(sub)}
+                                            className="rounded bg-brand px-3 py-1.5 text-[8px] font-black uppercase tracking-widest text-white hover:opacity-90"
+                                        >
+                                            Publish
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+                <div className="bg-slate-50 border-b border-slate-200 px-6 py-4">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Published Journals</h3>
+                </div>
+                <table className="w-full text-left">
+                    <thead>
+                        <tr className="border-b border-slate-200">
+                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Journal Title</th>
+                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Author</th>
+                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Reads</th>
+                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {publishedJournals.map(j => (
+                            <tr key={j.id}>
+                                <td className="px-6 py-4">
+                                    <p className="text-sm font-bold text-slate-900">{j.title}</p>
+                                    <p className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">{j.category}</p>
+                                </td>
+                                <td className="px-6 py-4 text-xs font-bold text-slate-600">{j.author}</td>
+                                <td className="px-6 py-4 text-sm font-black text-brand">{j.readCount || 0}</td>
+                                <td className="px-6 py-4">
+                                    <button onClick={() => deleteJournal(j.id, j.title)} className="text-slate-400 hover:text-red-500">
+                                        <Trash2 size={16} />
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         </div>
       )}
     </div>

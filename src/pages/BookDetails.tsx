@@ -5,11 +5,12 @@ import { db } from "../lib/firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { motion, AnimatePresence } from "motion/react";
 import { Helmet } from "react-helmet-async";
-import { Share2, Facebook, Twitter, MessageCircle, BookOpen, Download, Lock, Check, Heart, Star, Sparkles, Send, User, Settings, Crown, ArrowRight, X } from "lucide-react";
+import { Share2, Facebook, Twitter, MessageCircle, BookOpen, Download, Lock, Check, Heart, Star, Sparkles, Send, User, Settings, Crown, ArrowRight, X, Headphones, Play, Pause } from "lucide-react";
 import { GoogleGenAI } from "@google/genai";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { BookCard } from "../components/books/BookCard";
+import { AdSpace } from "../components/ads/AdSpace";
 import { PDFPreview } from "../components/books/PDFPreview";
 import { EpubPreview } from "../components/books/EpubPreview";
 
@@ -29,7 +30,32 @@ export function BookDetails() {
   const [recommendations, setRecommendations] = useState<any[]>([]);
   const [isFetchingRecs, setIsFetchingRecs] = useState(false);
   const [isGeneratingAIReviews, setIsGeneratingAIReviews] = useState(false);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [audioProgress, setAudioProgress] = useState(0);
   const navigate = useNavigate();
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+
+  const toggleAudio = () => {
+    if (!audioRef.current) return;
+    if (isPlayingAudio) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play();
+    }
+    setIsPlayingAudio(!isPlayingAudio);
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      const progress = (audioRef.current.currentTime / audioRef.current.duration) * 100;
+      setAudioProgress(progress);
+    }
+  };
+
+  const handleAudioEnd = () => {
+    setIsPlayingAudio(false);
+    setAudioProgress(0);
+  };
 
   useEffect(() => {
     async function fetchBookAndReviews() {
@@ -472,6 +498,49 @@ export function BookDetails() {
             </div>
 
             {/* AI Summary Section */}
+            {book.audioUrl && (
+              <div className="mt-10 rounded-2xl bg-brand p-8 text-white shadow-lg overflow-hidden relative group">
+                <div className="absolute right-0 top-0 -mr-4 -mt-4 opacity-10 transition-transform group-hover:scale-110 group-hover:rotate-12">
+                  <Headphones size={120} />
+                </div>
+                
+                <div className="relative flex flex-col gap-6 md:flex-row md:items-center">
+                  <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-md">
+                    <Headphones size={32} />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-white/70">AI-Generated Audiobook</h3>
+                    <h4 className="mt-1 text-xl font-black">Listen to a narration of this title</h4>
+                    <p className="mt-2 text-xs text-brand-light font-medium opacity-80">Experience the story through professional AI voice synthesis.</p>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <button 
+                      onClick={toggleAudio}
+                      className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-brand shadow-xl transition-transform hover:scale-105"
+                    >
+                      {isPlayingAudio ? <Pause size={24} /> : <Play size={24} className="ml-1" />}
+                    </button>
+                  </div>
+                </div>
+
+                <audio 
+                  ref={audioRef} 
+                  src={book.audioUrl} 
+                  onTimeUpdate={handleTimeUpdate}
+                  onEnded={handleAudioEnd}
+                  className="hidden" 
+                />
+
+                <div className="mt-6 h-1 w-full rounded-full bg-white/20">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${audioProgress}%` }}
+                    className="h-full rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.5)]"
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="mt-10 rounded-2xl bg-slate-900 p-8 text-white shadow-lg">
               <div className="mb-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -782,6 +851,8 @@ export function BookDetails() {
                 )}
               </div>
             </section>
+
+            <AdSpace position="book_details_bottom" className="mt-16 rounded-xl overflow-hidden" />
 
             {/* AI Recommendations Section */}
             {(isFetchingRecs || recommendations.length > 0) && (

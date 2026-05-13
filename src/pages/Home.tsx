@@ -5,6 +5,7 @@ import { BookCard } from "../components/books/BookCard";
 import { motion } from "motion/react";
 import { ArrowRight, BookOpen, ShieldCheck, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
+import { AdSpace } from "../components/ads/AdSpace";
 
 export function Home() {
   const [featuredBooks, setFeaturedBooks] = useState<any[]>([]);
@@ -23,27 +24,8 @@ export function Home() {
         ));
         const books = booksSnap.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
         
-        // Manual Seed for requested book
-        const seededBook = {
-          id: "seeded-fundamentals-business",
-          title: "Fundamentals of Business Management",
-          author: "Joy S. Mbotor",
-          authorId: "joy-s-mbotor",
-          isbn13: "978-978-68-2451-2",
-          category: "Educational Textbook",
-          description: "Fundamentals of Business Management is a comprehensive guide that bridges theory and practice, equipping students, entrepreneurs, and business leaders with the knowledge to thrive in today's dynamic business environment.",
-          price: 5.00,
-          coverUrl: "/book_cover.png",
-          status: "published",
-          createdAt: new Date().toISOString()
-        };
-
-        const finalBooks = books.some((b: any) => b.isbn13 === "978-978-68-2451-2") 
-          ? books 
-          : [seededBook, ...books];
-
-        setAllBooks(finalBooks);
-        setFeaturedBooks(finalBooks.slice(0, 8));
+        setAllBooks(books);
+        setFeaturedBooks(books.slice(0, 8));
 
         // Fetch active collections
         const collsSnap = await getDocs(query(collection(db, "collections"), where("isActive", "==", true), limit(3)));
@@ -107,6 +89,7 @@ export function Home() {
               </motion.div>
             </div>
           </div>
+          <AdSpace position="home_hero" className="mt-8 rounded-xl overflow-hidden" />
         </div>
       </section>
 
@@ -148,6 +131,10 @@ export function Home() {
           </div>
         </section>
       )}
+
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <AdSpace position="home_featured" className="rounded-xl" />
+      </div>
 
       {/* Stats/Features */}
       <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">

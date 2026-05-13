@@ -10,7 +10,12 @@ service cloud.firestore {
     function isSignedIn() { return request.auth != null; }
     function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
     function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
-    function isAdmin() { return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    function isAdmin() { 
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email == 'mbotorjoy@gmail.com' && request.auth.token.email_verified == true)
+      );
+    }
     function isAuthor() { 
       return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAuthor', false) == true;
@@ -18,6 +23,13 @@ service cloud.firestore {
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
     function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function hasJournalAccess() {
+      return isAdmin() || (
+        isSignedIn() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('subscriptionTier', 'free') != 'free'
+      );
+    }
 
     // 1. Books
     match /books/{bookId} {
@@ -31,6 +43,9 @@ service cloud.firestore {
             && (data.status == null || data.status in ['draft', 'pending', 'published'])
             && (data.coverUrl == null || (data.coverUrl is string && data.coverUrl.size() <= 1000))
             && (data.pdfUrl == null || (data.pdfUrl is string && data.pdfUrl.size() <= 1000))
+            && (data.audioUrl == null || (data.audioUrl is string && data.audioUrl.size() <= 1000))
+            && (data.hasAudiobook == null || data.hasAudiobook is bool)
+            && (data.audiobookRequestStatus == null || data.audiobookRequestStatus in ['none', 'requested', 'paid'])
             && (data.createdAt is timestamp);
       }
 
@@ -156,6 +171,70 @@ service cloud.firestore {
 
       allow read: if true;
       allow create, update, delete: if isAdmin() && isValidCollection(incoming()) && isValidId(collectionId);
+    }
+
+    // 8. Contact Messages
+    match /contactMessages/{messageId} {
+      function isValidMessage(data) {
+        return data.name is string && data.name.size() <= 200
+            && data.email is string && data.email.size() <= 200
+            && data.subject is string && data.subject.size() <= 200
+            && data.message is string && data.message.size() <= 5000
+            && data.status in ['unread', 'read', 'archived']
+            && data.createdAt is timestamp;
+      }
+      allow create: if isValidMessage(incoming()) && isValidId(messageId);
+      allow read, update, delete: if isAdmin();
+    }
+
+    // 9. Ads
+    match /ads/{adId} {
+      function isValidAd(data) {
+        return data.title is string && data.title.size() <= 200
+            && data.position in ['home_hero', 'home_featured', 'store_sidebar', 'book_details_bottom']
+            && data.code is string && data.code.size() <= 10000
+            && data.active is bool
+            && data.createdAt is timestamp;
+      }
+      allow read: if true;
+      allow create, update, delete: if isAdmin() && isValidAd(incoming()) && isValidId(adId);
+    }
+
+    // 10. Journals
+    match /journals/{journalId} {
+      function isValidJournal(data) {
+        return data.title is string && data.title.size() <= 300
+            && data.author is string && data.author.size() <= 200
+            && data.authorId is string
+            && data.abstract is string && data.abstract.size() <= 5000
+            && data.contentUrl is string && data.contentUrl.size() <= 1000
+            && data.status in ['published', 'archived']
+            && (data.coverUrl == null || (data.coverUrl is string && data.coverUrl.size() <= 1000))
+            && (data.category == null || data.category is string)
+            && (data.readCount == null || data.readCount is number)
+            && data.createdAt is timestamp;
+      }
+      allow list: if true;
+      allow get: if hasJournalAccess();
+      allow create, update, delete: if isAdmin() && isValidJournal(incoming()) && isValidId(journalId);
+    }
+
+    // 11. Journal Submissions
+    match /journalSubmissions/{submissionId} {
+      function isValidSubmission(data) {
+        return data.title is string && data.title.size() <= 300
+            && data.authorName is string && data.authorName.size() <= 200
+            && data.authorId == request.auth.uid
+            && data.abstract is string && data.abstract.size() <= 5000
+            && data.fileUrl is string && data.fileUrl.size() <= 1000
+            && data.status in ['submitted', 'vetting', 'accepted', 'rejected', 'published']
+            && data.paymentStatus in ['pending', 'paid']
+            && data.createdAt is timestamp;
+      }
+      allow get, list: if isSignedIn() && (resource.data.authorId == request.auth.uid || isAdmin());
+      allow create: if isVerified() && isValidSubmission(incoming()) && isValidId(submissionId);
+      allow update: if isAdmin();
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.authorId == request.auth.uid && resource.data.status == 'submitted');
     }
 
     // 6. Admins (lookup collection)

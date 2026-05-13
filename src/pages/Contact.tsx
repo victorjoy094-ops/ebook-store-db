@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { motion } from "motion/react";
 import { Mail, Phone, MapPin, Send, Loader2, CheckCircle } from "lucide-react";
 import toast from "react-hot-toast";
+import { db, auth } from "../lib/firebase";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
 export default function Contact() {
   const [loading, setLoading] = useState(false);
@@ -17,12 +19,22 @@ export default function Contact() {
     e.preventDefault();
     setLoading(true);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    setLoading(false);
-    setSubmitted(true);
-    toast.success("Message sent successfully!");
+    try {
+      await addDoc(collection(db, "contactMessages"), {
+        ...formData,
+        userId: auth.currentUser?.uid || "anonymous",
+        status: "unread",
+        createdAt: serverTimestamp(),
+      });
+      
+      setSubmitted(true);
+      toast.success("Message sent successfully!");
+    } catch (err) {
+      console.error("Error sending message:", err);
+      toast.error("Failed to send message. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -59,7 +71,7 @@ export default function Contact() {
                 </div>
                 <div>
                   <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Call Us</p>
-                  <p className="text-lg font-black text-slate-900 mt-1">+1 (555) 000-1234</p>
+                  <p className="text-lg font-black text-slate-900 mt-1">+234-8032548143</p>
                 </div>
               </div>
 
@@ -69,7 +81,7 @@ export default function Contact() {
                 </div>
                 <div>
                   <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Visit Us</p>
-                  <p className="text-lg font-black text-slate-900 mt-1">Lagos, Nigeria | Remote Worldwide</p>
+                  <p className="text-lg font-black text-slate-900 mt-1">University of Calabar Bookshop, Calabar, Cross River State, Nigeria</p>
                 </div>
               </div>
             </div>

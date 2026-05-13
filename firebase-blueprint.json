@@ -15,6 +15,9 @@
         "coverUrl": { "type": "string" },
         "pdfUrl": { "type": "string" },
         "previewUrl": { "type": "string" },
+        "audioUrl": { "type": "string" },
+        "hasAudiobook": { "type": "boolean" },
+        "audiobookRequestStatus": { "type": "string", "enum": ["none", "requested", "paid"] },
         "tags": { "type": "array", "items": { "type": "string" } },
         "isFree": { "type": "boolean" },
         "status": { "type": "string", "enum": ["draft", "pending", "published"] },
@@ -119,12 +122,82 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["title", "bookIds", "type", "createdAt"]
+    },
+    "ContactMessage": {
+      "title": "ContactMessage",
+      "description": "A message sent from the contact form.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "subject": { "type": "string" },
+        "message": { "type": "string" },
+        "userId": { "type": "string" },
+        "status": { "type": "string", "enum": ["unread", "read", "archived"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "email", "subject", "message", "status", "createdAt"]
+    },
+    "Ad": {
+      "title": "Ad",
+      "description": "An advertisement space for scripts/code.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "position": { "type": "string", "enum": ["home_hero", "home_featured", "store_sidebar", "book_details_bottom"] },
+        "code": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "position", "code", "active", "createdAt"]
+    },
+    "Journal": {
+      "title": "Journal",
+      "description": "A scholarly journal or article.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "author": { "type": "string" },
+        "authorId": { "type": "string" },
+        "abstract": { "type": "string" },
+        "contentUrl": { "type": "string" },
+        "coverUrl": { "type": "string" },
+        "category": { "type": "string" },
+        "status": { "type": "string", "enum": ["published", "archived"] },
+        "readCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "author", "authorId", "abstract", "contentUrl", "status", "createdAt"]
+    },
+    "JournalSubmission": {
+      "title": "Journal Submission",
+      "description": "A journal article submitted by an author for review.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorId": { "type": "string" },
+        "abstract": { "type": "string" },
+        "fileUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["submitted", "vetting", "accepted", "rejected", "published"] },
+        "paymentStatus": { "type": "string", "enum": ["pending", "paid"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "authorName", "authorId", "abstract", "fileUrl", "status", "paymentStatus", "createdAt"]
     }
   },
   "firestore": {
     "/books/{bookId}": {
       "schema": "Book",
       "description": "Store for ebooks."
+    },
+    "/journals/{journalId}": {
+      "schema": "Journal",
+      "description": "Published scholarly journals and articles."
+    },
+    "/journalSubmissions/{submissionId}": {
+      "schema": "JournalSubmission",
+      "description": "Submissions for journal publication."
     },
     "/applications/{appId}": {
       "schema": "AuthorApplication",
@@ -153,6 +226,14 @@
     "/collections/{collectionId}": {
       "schema": "Collection",
       "description": "Curated collections of books."
+    },
+    "/contactMessages/{messageId}": {
+      "schema": "ContactMessage",
+      "description": "Messages from the contact form.",
+    },
+    "/ads/{adId}": {
+      "schema": "Ad",
+      "description": "Advertisement slots and their corresponding code snippets."
     }
   }
 }

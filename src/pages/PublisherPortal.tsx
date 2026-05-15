@@ -13,7 +13,7 @@ import { handleFirestoreError, OperationType } from "../lib/firebase";
 type Tab = "dashboard" | "upload" | "manage" | "earnings" | "journals" | "stories";
 
 export function PublisherPortal() {
-  const { user, profile, signIn, loading: authLoading, walletAddress, connectWallet } = useAuth();
+  const { user, profile, isAdmin, signIn, loading: authLoading, walletAddress, connectWallet } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [loading, setLoading] = useState(false);
   const [requestingAudio, setRequestingAudio] = useState<string | null>(null);
@@ -191,7 +191,7 @@ export function PublisherPortal() {
         price: formData.price,
         coverUrl,
         pdfUrl,
-        status: "pending",
+        status: isAdmin ? "published" : "pending",
         createdAt: serverTimestamp()
       };
 
@@ -1129,7 +1129,7 @@ export function PublisherPortal() {
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Price (USD)</label>
-                <input required type="number" step="0.01" value={formData.price} onChange={e => setFormData({...formData, price: parseFloat(e.target.value)})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none border border-slate-200 focus:ring-1 focus:ring-brand" />
+                <input required type="number" step="0.01" value={isNaN(formData.price) ? "" : formData.price} onChange={e => setFormData({...formData, price: parseFloat(e.target.value)})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none border border-slate-200 focus:ring-1 focus:ring-brand" />
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tags (comma separated)</label>
@@ -1166,7 +1166,14 @@ export function PublisherPortal() {
             </div>
 
             <button disabled={loading} className="w-full rounded bg-brand py-4 text-sm font-black uppercase tracking-widest text-white shadow-lg transition-opacity hover:opacity-90 disabled:opacity-50">
-              {loading ? <Loader2 className="mx-auto animate-spin" /> : "Submit Manuscript for Review"}
+              {loading ? (
+                <div className="flex items-center justify-center gap-2">
+                  <Loader2 className="animate-spin" size={20} />
+                  <span>{isAdmin ? "Publishing..." : "Submitting..."}</span>
+                </div>
+              ) : (
+                isAdmin ? "Publish Book" : "Submit Manuscript for Review"
+              )}
             </button>
           </motion.form>
         )}

@@ -36,7 +36,7 @@ export function Admin() {
     description: "",
     tags: "",
     price: 0,
-    status: "pending",
+    status: "published",
   });
 
   const [collectionForm, setCollectionForm] = useState({
@@ -254,10 +254,10 @@ export function Admin() {
         timestamp: serverTimestamp()
       });
 
-      toast.success("Book uploaded and pending approval!");
+      toast.success("Book published successfully!");
       setFormData({
         title: "", author: "", authorId: "SYSTEM", isbn13: "", category: "Fiction",
-        description: "", tags: "", price: 0, status: "pending",
+        description: "", tags: "", price: 0, status: "published",
       });
       setCoverFile(null);
       setPdfFile(null);
@@ -564,7 +564,7 @@ export function Admin() {
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Price (USD)</label>
-              <input required type="number" step="0.01" value={formData.price} onChange={e => setFormData({...formData, price: parseFloat(e.target.value)})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none focus:ring-1 focus:ring-brand" />
+              <input required type="number" step="0.01" value={isNaN(formData.price) ? "" : formData.price} onChange={e => setFormData({...formData, price: parseFloat(e.target.value)})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none focus:ring-1 focus:ring-brand" />
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tags (comma separated)</label>
@@ -601,7 +601,12 @@ export function Admin() {
           </div>
 
           <button disabled={loading} className="w-full rounded bg-brand py-4 text-sm font-black uppercase tracking-widest text-white shadow-md transition-opacity hover:opacity-90 disabled:opacity-50">
-            {loading ? <Loader2 className="mx-auto animate-spin" /> : "Finalize Upload"}
+            {loading ? (
+              <div className="flex items-center justify-center gap-2">
+                <Loader2 className="animate-spin" size={20} />
+                <span>Publishing...</span>
+              </div>
+            ) : "Publish Book"}
           </button>
         </form>
       )}
@@ -702,7 +707,7 @@ export function Admin() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Price (USD)</label>
-                  <input required type="number" step="0.01" value={editForm.price} onChange={e => setEditForm({...editForm, price: parseFloat(e.target.value)})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none focus:ring-1 focus:ring-brand" />
+                  <input required type="number" step="0.01" value={isNaN(editForm.price) ? "" : editForm.price} onChange={e => setEditForm({...editForm, price: parseFloat(e.target.value)})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none focus:ring-1 focus:ring-brand" />
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tags (comma separated)</label>

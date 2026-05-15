@@ -21,6 +21,8 @@ import Contact from "./pages/Contact";
 import { TermsAndPrivacy } from "./pages/TermsAndPrivacy";
 import Journals from "./pages/Journals";
 import JournalDetail from "./pages/JournalDetail";
+import { Stories } from "./pages/Stories";
+import { StoryDetail } from "./pages/StoryDetail";
 import { AuthProvider } from "./contexts/AuthContext";
 import { Toaster } from "react-hot-toast";
 import { OnboardingModal } from "./components/auth/OnboardingModal";
@@ -50,6 +52,8 @@ export default function App() {
                 <Route path="/terms-privacy" element={<TermsAndPrivacy />} />
                 <Route path="/journals" element={<Journals />} />
                 <Route path="/journal/:id" element={<JournalDetail />} />
+                <Route path="/stories" element={<Stories />} />
+                <Route path="/story/:id" element={<StoryDetail />} />
               </Routes>
             </main>
             <Footer />

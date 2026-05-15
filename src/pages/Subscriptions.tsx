@@ -82,6 +82,7 @@ export function Subscriptions() {
             {[
               "Full Catalog Access",
               "New Releases Included",
+              "Full Stories & Journals",
               "Cross-Device Syncing",
               "Cancel Anytime"
             ].map((feature, i) => (
@@ -119,6 +120,7 @@ export function Subscriptions() {
           <ul className="mb-10 space-y-4">
             {[
               "Everything in Monthly Plan",
+              "Unlimited Stories & Journals",
               "Annual savings included",
               "Exclusive Author Events",
               "Priority Customer Support"

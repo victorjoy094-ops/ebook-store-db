@@ -29,6 +29,7 @@ export function Navbar() {
           </Link>
           <div className="hidden items-center space-x-6 md:flex">
             <Link to="/store" className="text-sm font-medium text-slate-600 hover:text-brand">Browse</Link>
+            <Link to="/stories" className="text-sm font-medium text-slate-600 hover:text-brand">Stories</Link>
             <Link to="/journals" className="text-sm font-medium text-slate-600 hover:text-brand">Journals</Link>
             <Link to="/subscriptions" className="text-sm font-bold text-accent hover:text-brand">Membership</Link>
             <Link to="/about" className="text-sm font-medium text-slate-600 hover:text-brand">About</Link>

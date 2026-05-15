@@ -32,6 +32,8 @@ export function BookDetails() {
   const [isGeneratingAIReviews, setIsGeneratingAIReviews] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [audioProgress, setAudioProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
   const navigate = useNavigate();
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
@@ -40,21 +42,47 @@ export function BookDetails() {
     if (isPlayingAudio) {
       audioRef.current.pause();
     } else {
-      audioRef.current.play();
+      audioRef.current.play().catch(err => {
+        console.error("Playback error:", err);
+        toast.error("Audio playback failed. Please try again.");
+      });
     }
     setIsPlayingAudio(!isPlayingAudio);
   };
 
   const handleTimeUpdate = () => {
     if (audioRef.current) {
-      const progress = (audioRef.current.currentTime / audioRef.current.duration) * 100;
-      setAudioProgress(progress);
+      const current = audioRef.current.currentTime;
+      setCurrentTime(current);
+      const progress = (current / audioRef.current.duration) * 100;
+      setAudioProgress(isNaN(progress) ? 0 : progress);
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (audioRef.current) {
+      setDuration(audioRef.current.duration);
     }
   };
 
   const handleAudioEnd = () => {
     setIsPlayingAudio(false);
     setAudioProgress(0);
+    setCurrentTime(0);
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!audioRef.current || !duration) return;
+    const seekTo = (parseFloat(e.target.value) / 100) * duration;
+    audioRef.current.currentTime = seekTo;
+    setAudioProgress(parseFloat(e.target.value));
+  };
+
+  const formatTime = (time: number) => {
+    if (isNaN(time)) return "0:00";
+    const mins = Math.floor(time / 60);
+    const secs = Math.floor(time % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   useEffect(() => {
@@ -527,16 +555,38 @@ export function BookDetails() {
                   ref={audioRef} 
                   src={book.audioUrl} 
                   onTimeUpdate={handleTimeUpdate}
+                  onLoadedMetadata={handleLoadedMetadata}
                   onEnded={handleAudioEnd}
+                  preload="metadata"
                   className="hidden" 
                 />
 
-                <div className="mt-6 h-1 w-full rounded-full bg-white/20">
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: `${audioProgress}%` }}
-                    className="h-full rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.5)]"
-                  />
+                <div className="mt-6 flex flex-col gap-2">
+                  <div className="relative group/progress h-6 flex items-center">
+                    <input 
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={audioProgress}
+                      onChange={handleSeek}
+                      className="absolute inset-0 w-full opacity-0 cursor-pointer z-10"
+                    />
+                    <div className="w-full h-1 rounded-full bg-white/20 relative">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${audioProgress}%` }}
+                        className="h-full rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.5)]"
+                      />
+                      <motion.div 
+                        animate={{ left: `${audioProgress}%` }}
+                        className="absolute top-1/2 -ml-1.5 -mt-1.5 h-3 w-3 rounded-full bg-white shadow-lg opacity-0 group-hover/progress:opacity-100 transition-opacity"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-white/60">
+                    <span>{formatTime(currentTime)}</span>
+                    <span>{formatTime(duration)}</span>
+                  </div>
                 </div>
               </div>
             )}

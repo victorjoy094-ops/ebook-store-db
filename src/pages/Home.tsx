@@ -11,6 +11,7 @@ export function Home() {
   const [featuredBooks, setFeaturedBooks] = useState<any[]>([]);
   const [collections, setCollections] = useState<any[]>([]);
   const [allBooks, setAllBooks] = useState<any[]>([]);
+  const [recentStories, setRecentStories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -30,6 +31,15 @@ export function Home() {
         // Fetch active collections
         const collsSnap = await getDocs(query(collection(db, "collections"), where("isActive", "==", true), limit(3)));
         setCollections(collsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+        // Fetch recent stories for blog section
+        const storiesSnap = await getDocs(query(
+          collection(db, "stories"),
+          where("status", "==", "published"),
+          orderBy("createdAt", "desc"),
+          limit(2)
+        ));
+        setRecentStories(storiesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       } catch (error) {
         console.error("Error fetching homepage data:", error);
       } finally {
@@ -135,6 +145,53 @@ export function Home() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <AdSpace position="home_featured" className="rounded-xl" />
       </div>
+
+      {/* Fresh Stories (Blog) */}
+      <section className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center justify-between gap-6 md:flex-row mb-12">
+          <div className="text-center md:text-left">
+            <span className="text-[10px] font-black uppercase tracking-widest text-purple-600">Premium Reading</span>
+            <h2 className="mt-2 text-4xl font-black text-slate-900 tracking-tight font-serif italic">Fresh Stories</h2>
+            <p className="mt-2 text-slate-500 max-w-lg">Insights, essays, and stories from our verified authors. Exclusive for members.</p>
+          </div>
+          <Link to="/stories" className="group rounded-full border border-slate-200 bg-white px-8 py-3 text-xs font-black uppercase tracking-widest text-slate-900 transition-all hover:border-brand hover:text-brand flex items-center gap-2 shadow-sm italic font-serif">
+            Read all stories <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+            {recentStories.length > 0 ? recentStories.map(story => (
+              <Link key={story.id} to={`/story/${story.id}`} className="group flex flex-col gap-6 md:flex-row items-center border border-slate-100 p-8 rounded-[2rem] bg-white transition-all hover:shadow-xl hover:shadow-slate-200/50">
+                <div className="w-full md:w-48 h-32 rounded-2xl bg-slate-100 flex-shrink-0 overflow-hidden">
+                  {story.coverUrl ? (
+                    <img src={story.coverUrl} alt={story.title} className="h-full w-full object-cover transition-transform group-hover:scale-110" />
+                  ) : (
+                    <div className="h-full w-full bg-gradient-to-br from-slate-200 to-slate-300 flex items-center justify-center text-slate-400">
+                      <BookOpen size={24} />
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-3">
+                  <h4 className="text-[10px] font-black tracking-widest text-purple-600 uppercase italic font-serif">{story.category || "GENERAL"}</h4>
+                  <h3 className="text-xl font-bold text-slate-900 group-hover:text-brand transition-colors font-serif italic">{story.title}</h3>
+                  <p className="text-sm text-slate-500 line-clamp-2 italic font-medium">{story.summary}</p>
+                </div>
+              </Link>
+            )) : (
+              // Fallback skeleton or default content if no stories found
+              [1, 2].map(i => (
+                <div key={i} className="flex flex-col gap-6 md:flex-row items-center border border-slate-100 p-8 rounded-[2rem] bg-slate-50 animate-pulse">
+                  <div className="w-full md:w-48 h-32 rounded-2xl bg-slate-200 flex-shrink-0" />
+                  <div className="space-y-3 flex-1">
+                    <div className="h-2 w-12 rounded bg-slate-200" />
+                    <div className="h-4 w-3/4 rounded bg-slate-200" />
+                    <div className="h-3 w-full rounded bg-slate-200" />
+                  </div>
+                </div>
+              ))
+            )}
+        </div>
+      </section>
 
       {/* Stats/Features */}
       <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">

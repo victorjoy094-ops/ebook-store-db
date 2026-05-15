@@ -37,7 +37,7 @@ service cloud.firestore {
         return data.title is string && data.title.size() <= 200
             && data.author is string && data.author.size() <= 200
             && data.authorId == request.auth.uid
-            && (data.isbn13 == null || (data.isbn13 is string && data.isbn13.size() >= 10 && data.isbn13.size() <= 13))
+            && (data.isbn13 == null || (data.isbn13 is string && data.isbn13.size() >= 5 && data.isbn13.size() <= 30))
             && data.price is number && data.price >= 0
             && data.category is string
             && (data.status == null || data.status in ['draft', 'pending', 'published'])
@@ -46,6 +46,7 @@ service cloud.firestore {
             && (data.audioUrl == null || (data.audioUrl is string && data.audioUrl.size() <= 1000))
             && (data.hasAudiobook == null || data.hasAudiobook is bool)
             && (data.audiobookRequestStatus == null || data.audiobookRequestStatus in ['none', 'requested', 'paid'])
+            && (data.tags == null || data.tags is list)
             && (data.createdAt is timestamp);
       }
 
@@ -57,7 +58,8 @@ service cloud.firestore {
       
       allow update: if (isAdmin() || (isAuthor() && existing().authorId == request.auth.uid)) 
                     && isValidBook(incoming())
-                    && (isAdmin() || (incoming().status == 'draft' || incoming().status == 'pending' || (incoming().status == 'published' && existing().status == 'published')));
+                    && (isAdmin() || (incoming().status == 'draft' || incoming().status == 'pending' || (incoming().status == 'published' && existing().status == 'published')))
+                    && (incoming().authorId == existing().authorId);
       
       allow delete: if isAdmin() || (isAuthor() && existing().authorId == request.auth.uid && existing().status == 'draft');
     }
@@ -235,6 +237,35 @@ service cloud.firestore {
       allow create: if isVerified() && isValidSubmission(incoming()) && isValidId(submissionId);
       allow update: if isAdmin();
       allow delete: if isAdmin() || (isSignedIn() && resource.data.authorId == request.auth.uid && resource.data.status == 'submitted');
+    }
+
+    // 12. Stories (Blogs)
+    match /stories/{storyId} {
+      function isValidStory(data) {
+        return data.title is string && data.title.size() <= 300
+            && data.authorId == request.auth.uid
+            && data.authorName is string
+            && data.summary is string && data.summary.size() <= 2000
+            && data.status in ['draft', 'published']
+            && (data.category == null || data.category is string)
+            && (data.coverUrl == null || (data.coverUrl is string && data.coverUrl.size() <= 1000))
+            && (data.readCount == null || data.readCount is number)
+            && (data.createdAt is timestamp);
+      }
+
+      allow list: if resource.data.status == 'published' || (isSignedIn() && resource.data.authorId == request.auth.uid) || isAdmin();
+      allow get: if true;
+      
+      allow create: if isAuthor() && isValidStory(incoming()) && isValidId(storyId);
+      allow update: if (isAdmin() || (isAuthor() && existing().authorId == request.auth.uid)) && isValidStory(incoming());
+      allow delete: if isAdmin() || (isAuthor() && existing().authorId == request.auth.uid);
+
+      match /content/full {
+        allow read: if isAdmin() 
+                    || (isSignedIn() && get(/databases/$(database)/documents/stories/$(storyId)).data.authorId == request.auth.uid)
+                    || (isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('subscriptionTier', 'free') != 'free');
+        allow write: if (isAdmin() || (isAuthor() && get(/databases/$(database)/documents/stories/$(storyId)).data.authorId == request.auth.uid));
+      }
     }
 
     // 6. Admins (lookup collection)

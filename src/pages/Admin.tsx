@@ -3,11 +3,11 @@ import { useAuth } from "../contexts/AuthContext";
 import { db, storage } from "../lib/firebase";
 import { collection, addDoc, serverTimestamp, getDocs, doc, deleteDoc, updateDoc, query, orderBy } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { Plus, Upload, Loader2, Check, Settings, BarChart3, Database, Trash2, Edit3, User as UserIcon, DollarSign, BookOpen, Mail, Headphones, Megaphone, FileText } from "lucide-react";
+import { Plus, Upload, Loader2, Check, Settings, BarChart3, Database, Trash2, Edit3, User as UserIcon, DollarSign, BookOpen, Mail, Headphones, Megaphone, FileText, PenTool } from "lucide-react";
 import toast from "react-hot-toast";
 import { generateAudiobookExcerpt } from "../services/geminiService";
 
-type AdminTab = "upload" | "manage" | "analytics" | "users" | "apps" | "logs" | "collections" | "inbox" | "ads" | "journals";
+type AdminTab = "upload" | "manage" | "analytics" | "users" | "apps" | "logs" | "collections" | "inbox" | "ads" | "journals" | "stories";
 
 export function Admin() {
   const { user: adminUser, isAdmin } = useAuth();
@@ -23,6 +23,7 @@ export function Admin() {
   const [ads, setAds] = useState<any[]>([]);
   const [journalSubmissions, setJournalSubmissions] = useState<any[]>([]);
   const [publishedJournals, setPublishedJournals] = useState<any[]>([]);
+  const [stories, setStories] = useState<any[]>([]);
   const [editingBook, setEditingBook] = useState<any | null>(null);
   const [generatingAudio, setGeneratingAudio] = useState<string | null>(null);
   
@@ -99,6 +100,9 @@ export function Admin() {
 
         const journalsSnap = await getDocs(query(collection(db, "journals"), orderBy("createdAt", "desc")));
         setPublishedJournals(journalsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+
+        const storiesSnap = await getDocs(query(collection(db, "stories"), orderBy("createdAt", "desc")));
+        setStories(storiesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
       } catch (err) {
         console.error("Error fetching admin data:", err);
       }
@@ -233,6 +237,7 @@ export function Admin() {
 
       const bookData = {
         ...formData,
+        isbn13: formData.isbn13.trim() || ("JM-" + Math.random().toString(36).substring(2, 7).toUpperCase() + "-" + Math.random().toString(36).substring(2, 7).toUpperCase()),
         tags: formData.tags.split(",").map(t => t.trim()).filter(t => t !== ""),
         coverUrl,
         pdfUrl,
@@ -517,6 +522,7 @@ export function Admin() {
             { id: "inbox", icon: Mail, label: "Inbox" },
             { id: "ads", icon: Megaphone, label: "Ads" },
             { id: "journals", icon: FileText, label: "Journals" },
+            { id: "stories", icon: PenTool, label: "Stories" },
             { id: "users", icon: DollarSign, label: "Users" },
             { id: "analytics", icon: BarChart3, label: "Stats" },
             { id: "logs", icon: Database, label: "Logs" }
@@ -547,8 +553,8 @@ export function Admin() {
               <input required value={formData.author} onChange={e => setFormData({...formData, author: e.target.value})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none focus:ring-1 focus:ring-brand" />
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">ISBN-13</label>
-              <input required maxLength={13} value={formData.isbn13} onChange={e => setFormData({...formData, isbn13: e.target.value.replace(/\D/g, '')})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none focus:ring-1 focus:ring-brand" />
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">ISBN / Book ID (Optional)</label>
+              <input value={formData.isbn13} onChange={e => setFormData({...formData, isbn13: e.target.value})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none focus:ring-1 focus:ring-brand" placeholder="Auto-generated if empty" />
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Category</label>
@@ -1214,6 +1220,56 @@ export function Admin() {
                     </tbody>
                 </table>
             </div>
+        </div>
+      )}
+
+      {activeTab === "stories" && (
+        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+          <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex justify-between items-center">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Master Stories Registry</h3>
+            <p className="text-[10px] font-black uppercase tracking-widest text-brand">{stories.length} Total Stories</p>
+          </div>
+          <table className="w-full text-left">
+            <thead>
+              <tr className="border-b border-slate-200">
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Story Title</th>
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Author</th>
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Reads</th>
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {stories.map(s => (
+                <tr key={s.id}>
+                  <td className="px-6 py-4">
+                    <p className="text-sm font-bold text-slate-900">{s.title}</p>
+                    <p className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">{s.category}</p>
+                  </td>
+                  <td className="px-6 py-4 text-xs font-bold text-slate-600">{s.authorName}</td>
+                  <td className="px-6 py-4 text-sm font-black text-brand">{s.readCount || 0}</td>
+                  <td className="px-6 py-4">
+                    <button 
+                      onClick={async () => {
+                        if (confirm(`Delete story "${s.title}"?`)) {
+                          await deleteDoc(doc(db, "stories", s.id));
+                          setStories(stories.filter(story => story.id !== s.id));
+                          toast.success("Story deleted.");
+                        }
+                      }} 
+                      className="text-slate-400 hover:text-red-500"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {stories.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-6 py-12 text-center text-sm italic text-slate-400">No stories found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

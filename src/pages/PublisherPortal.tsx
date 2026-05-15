@@ -5,10 +5,12 @@ import { db, storage } from "../lib/firebase";
 import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, deleteDoc, orderBy, updateDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { motion, AnimatePresence } from "motion/react";
-import { BookOpen, Upload, Plus, CheckCircle2, AlertCircle, Loader2, BarChart3, Database, Trash2, Edit3, UserPlus, DollarSign, Headphones, FileText, Megaphone } from "lucide-react";
+import { BookOpen, Upload, Plus, CheckCircle2, AlertCircle, Loader2, BarChart3, Database, Trash2, Edit3, UserPlus, DollarSign, Headphones, FileText, Megaphone, PenTool, Sparkles, ArrowRight } from "lucide-react";
 import toast from "react-hot-toast";
 
-type Tab = "dashboard" | "upload" | "manage" | "earnings" | "journals";
+import { handleFirestoreError, OperationType } from "../lib/firebase";
+
+type Tab = "dashboard" | "upload" | "manage" | "earnings" | "journals" | "stories";
 
 export function PublisherPortal() {
   const { user, profile, signIn, loading: authLoading, walletAddress, connectWallet } = useAuth();
@@ -17,6 +19,7 @@ export function PublisherPortal() {
   const [requestingAudio, setRequestingAudio] = useState<string | null>(null);
   const [application, setApplication] = useState<any>(null);
   const [myBooks, setMyBooks] = useState<any[]>([]);
+  const [myStories, setMyStories] = useState<any[]>([]);
   const [myJournalSubmissions, setMyJournalSubmissions] = useState<any[]>([]);
   const [myPublishedJournals, setMyPublishedJournals] = useState<any[]>([]);
   const [myTransactions, setMyTransactions] = useState<any[]>([]);
@@ -34,6 +37,15 @@ export function PublisherPortal() {
   });
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+
+  // Story state
+  const [storyData, setStoryData] = useState({
+    title: "",
+    category: "Personal Growth",
+    summary: "",
+    content: ""
+  });
+  const [storyCover, setStoryCover] = useState<File | null>(null);
 
   // Journal Submission State
   const [journalData, setJournalData] = useState({
@@ -55,63 +67,58 @@ export function PublisherPortal() {
     async function fetchData() {
       setFetching(true);
       try {
+        const promises = [];
+
         // Fetch My Application
         const appQuery = query(collection(db, "applications"), where("userId", "==", user?.uid));
-        const appSnap = await getDocs(appQuery);
-        if (!appSnap.empty) {
-          setApplication({ id: appSnap.docs[0].id, ...appSnap.docs[0].data() });
-        }
+        promises.push(getDocs(appQuery).then(snap => {
+          if (!snap.empty) {
+            setApplication({ id: snap.docs[0].id, ...snap.docs[0].data() });
+          }
+        }));
 
-        // Fetch My Books
+        // Fetch My Books and related if Author
         if (profile?.isAuthor) {
-          // Use a simpler query to avoid index requirements, then sort in memory
-          const booksQuery = query(
-            collection(db, "books"), 
-            where("authorId", "==", user?.uid)
-          );
-          const booksSnap = await getDocs(booksQuery);
-          const books = booksSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-          
-          // Sort in memory by createdAt desc
-          const sortedBooks = [...books].sort((a, b) => {
-            const timeA = a.createdAt?.toMillis?.() || 0;
-            const timeB = b.createdAt?.toMillis?.() || 0;
-            return timeB - timeA;
-          });
-          setMyBooks(sortedBooks);
+          const booksQuery = query(collection(db, "books"), where("authorId", "==", user?.uid));
+          const tQuery = query(collection(db, "transactions"), where("authorId", "==", user?.uid));
+          const journalsQuery = query(collection(db, "journalSubmissions"), where("authorId", "==", user?.uid));
+          const publishedJournalsQuery = query(collection(db, "journals"), where("authorId", "==", user?.uid));
+          const storiesQuery = query(collection(db, "stories"), where("authorId", "==", user?.uid));
 
-          // Fetch My Transactions
-          const tQuery = query(
-            collection(db, "transactions"), 
-            where("authorId", "==", user?.uid)
-          );
-          const tSnap = await getDocs(tQuery);
-          const transactions = tSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-          
-          // Sort in memory
-          const sortedTx = [...transactions].sort((a, b) => {
-            const timeA = a.createdAt?.toMillis?.() || 0;
-            const timeB = b.createdAt?.toMillis?.() || 0;
-            return timeB - timeA;
-          });
-          setMyTransactions(sortedTx);
+          promises.push(getDocs(booksQuery).then(snap => {
+            const books = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+            const sortedBooks = [...books].sort((a, b) => {
+              const timeA = a.createdAt?.toMillis?.() || 0;
+              const timeB = b.createdAt?.toMillis?.() || 0;
+              return timeB - timeA;
+            });
+            setMyBooks(sortedBooks);
+          }));
 
-          // Fetch My Journal Submissions
-          const journalsQuery = query(
-            collection(db, "journalSubmissions"),
-            where("authorId", "==", user?.uid)
-          );
-          const journalsSnap = await getDocs(journalsQuery);
-          setMyJournalSubmissions(journalsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+          promises.push(getDocs(tQuery).then(snap => {
+            const transactions = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+            const sortedTx = [...transactions].sort((a, b) => {
+              const timeA = a.createdAt?.toMillis?.() || 0;
+              const timeB = b.createdAt?.toMillis?.() || 0;
+              return timeB - timeA;
+            });
+            setMyTransactions(sortedTx);
+          }));
 
-          // Fetch My Published Journals
-          const publishedJournalsQuery = query(
-            collection(db, "journals"),
-            where("authorId", "==", user?.uid)
-          );
-          const publishedJournalsSnap = await getDocs(publishedJournalsQuery);
-          setMyPublishedJournals(publishedJournalsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+          promises.push(getDocs(journalsQuery).then(snap => {
+            setMyJournalSubmissions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          }));
+
+          promises.push(getDocs(publishedJournalsQuery).then(snap => {
+            setMyPublishedJournals(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          }));
+
+          promises.push(getDocs(storiesQuery).then(snap => {
+            setMyStories(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          }));
         }
+
+        await Promise.all(promises);
       } catch (err) {
         console.error("Error fetching publisher data:", err);
         toast.error("Could not sync your library. Try refreshing.");
@@ -139,6 +146,7 @@ export function PublisherPortal() {
       toast.success("Application submitted! We'll review it soon.");
       window.location.reload();
     } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, "applications");
       toast.error("Failed to submit application.");
     } finally {
       setLoading(false);
@@ -148,28 +156,35 @@ export function PublisherPortal() {
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !coverFile || !pdfFile) {
-      toast.error("Please fill all fields and select files.");
+      toast.error("Please fill all fields and select files (Cover and Manuscript).");
       return;
     }
 
-    setLoading(true);
-    try {
-      // 1. Upload Cover
-      const coverRef = ref(storage, `covers/${Date.now()}-${coverFile.name}`);
-      const coverSnap = await uploadBytes(coverRef, coverFile);
-      const coverUrl = await getDownloadURL(coverSnap.ref);
+    const finalIsbn = formData.isbn13.trim() || ("JM-" + Math.random().toString(36).substring(2, 7).toUpperCase() + "-" + Math.random().toString(36).substring(2, 7).toUpperCase());
 
-      // 2. Upload PDF
+    setLoading(true);
+    const toastId = toast.loading("Uploading files and publishing...");
+    try {
+      // 1. Upload Files in Parallel
+      const coverRef = ref(storage, `covers/${Date.now()}-${coverFile.name}`);
       const pdfRef = ref(storage, `books/${Date.now()}-${pdfFile.name}`);
-      const pdfSnap = await uploadBytes(pdfRef, pdfFile);
-      const pdfUrl = await getDownloadURL(pdfSnap.ref);
+
+      const [coverSnap, pdfSnap] = await Promise.all([
+        uploadBytes(coverRef, coverFile),
+        uploadBytes(pdfRef, pdfFile)
+      ]);
+
+      const [coverUrl, pdfUrl] = await Promise.all([
+        getDownloadURL(coverSnap.ref),
+        getDownloadURL(pdfSnap.ref)
+      ]);
 
       // 3. Save to Firestore
       const bookData = {
         title: formData.title,
         author: formData.author,
         authorId: user.uid,
-        isbn13: formData.isbn13,
+        isbn13: finalIsbn,
         category: formData.category,
         description: formData.description,
         tags: formData.tags.split(",").map(t => t.trim()).filter(t => t !== ""),
@@ -180,17 +195,24 @@ export function PublisherPortal() {
         createdAt: serverTimestamp()
       };
 
-      await addDoc(collection(db, "books"), bookData);
+      const bookRef = await addDoc(collection(db, "books"), bookData);
       
-      // Log Audit
-      await addDoc(collection(db, "auditLogs"), {
-        action: "BOOK_UPLOAD",
-        performedBy: user.uid,
-        details: `Author ${user.displayName} uploaded ${formData.title}`,
-        timestamp: serverTimestamp()
-      });
+      // Log Audit and update local state in parallel
+      await Promise.all([
+        addDoc(collection(db, "auditLogs"), {
+          action: "BOOK_UPLOAD",
+          performedBy: user.uid,
+          details: `Author ${user.displayName} uploaded ${formData.title}`,
+          timestamp: serverTimestamp()
+        }),
+        // Avoid full re-fetch, just update local state
+        new Promise<void>((resolve) => {
+          setMyBooks(prev => [{ id: bookRef.id, ...bookData, createdAt: { toMillis: () => Date.now() } as any }, ...prev]);
+          resolve();
+        })
+      ]);
 
-      toast.success("Manuscript submitted for review!");
+      toast.success("Manuscript submitted for review!", { id: toastId });
       setFormData({
         title: "", author: "", isbn13: "", category: "Fiction",
         description: "", tags: "", price: 9.99
@@ -198,12 +220,12 @@ export function PublisherPortal() {
       setCoverFile(null);
       setPdfFile(null);
       setActiveTab("manage");
-      
-      // Refresh list
-      const updatedBooks = await getDocs(query(collection(db, "books"), where("authorId", "==", user.uid)));
-      setMyBooks(updatedBooks.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (err) {
-      toast.error("Upload failed.");
+      console.error("Upload error:", err);
+      if (err instanceof Error && err.message.includes("permission")) {
+         handleFirestoreError(err, OperationType.WRITE, "books");
+      }
+      toast.error("Upload failed: " + (err instanceof Error ? err.message : "Possible error"), { id: toastId });
     } finally {
       setLoading(false);
     }
@@ -301,6 +323,7 @@ export function PublisherPortal() {
         if (response.status === "successful") {
           setLoading(true);
           try {
+            const toastId = toast.loading("Uploading files and finalising submission...");
             const fileRef = ref(storage, `journalSubmissions/${Date.now()}-${journalFile.name}`);
             const fileSnap = await uploadBytes(fileRef, journalFile);
             const fileUrl = await getDownloadURL(fileSnap.ref);
@@ -318,23 +341,28 @@ export function PublisherPortal() {
               createdAt: serverTimestamp()
             };
 
-            await addDoc(collection(db, "journalSubmissions"), submissionData);
+            const submissionRef = await addDoc(collection(db, "journalSubmissions"), submissionData);
             
-            await addDoc(collection(db, "auditLogs"), {
-              action: "JOURNAL_SUBMISSION",
-              performedBy: user.uid,
-              details: `Author ${user.displayName} paid $40 and submitted journal ${journalData.title}`,
-              timestamp: serverTimestamp()
-            });
+            await Promise.all([
+              addDoc(collection(db, "auditLogs"), {
+                action: "JOURNAL_SUBMISSION",
+                performedBy: user.uid,
+                details: `Author ${user.displayName} paid $40 and submitted journal ${journalData.title}`,
+                entityId: submissionRef.id,
+                timestamp: serverTimestamp()
+              }),
+              new Promise<void>((resolve) => {
+                setMyJournalSubmissions(prev => [{ id: submissionRef.id, ...submissionData, createdAt: { toMillis: () => Date.now() } as any }, ...prev]);
+                resolve();
+              })
+            ]);
 
-            toast.success("Journal manuscript submitted! $40 fee processed.");
+            toast.success("Journal manuscript submitted!", { id: toastId });
             setJournalData({ title: "", category: "Science", abstract: "" });
             setJournalFile(null);
-            
-            const jq = query(collection(db, "journalSubmissions"), where("authorId", "==", user.uid));
-            const jSnap = await getDocs(jq);
-            setMyJournalSubmissions(jSnap.docs.map(d => ({ id: d.id, ...d.data() })));
           } catch (err) {
+            console.error("Journal submission error:", err);
+            handleFirestoreError(err, OperationType.WRITE, "journalSubmissions");
             toast.error("Submission error after payment. Please contact support with ID: " + response.transaction_id);
           } finally {
             setLoading(false);
@@ -347,6 +375,70 @@ export function PublisherPortal() {
         console.log("Modal closed");
       },
     });
+  };
+
+  const handleStorySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !storyData.title || !storyData.summary || !storyData.content) {
+      toast.error("Please fill in all required fields.");
+      return;
+    }
+
+    setLoading(true);
+    const toastId = toast.loading("Publishing story...");
+    try {
+      let coverUrl = "";
+      if (storyCover) {
+        const coverRef = ref(storage, `storyCovers/${Date.now()}-${storyCover.name}`);
+        const snap = await uploadBytes(coverRef, storyCover);
+        coverUrl = await getDownloadURL(snap.ref);
+      }
+
+      const storyPayload = {
+        title: storyData.title,
+        authorId: user.uid,
+        authorName: user.displayName,
+        summary: storyData.summary,
+        category: storyData.category,
+        coverUrl,
+        readCount: 0,
+        status: "published",
+        createdAt: serverTimestamp()
+      };
+
+      const storyRef = await addDoc(collection(db, "stories"), storyPayload);
+
+      // Save restricted content and Audit log in parallel
+      await Promise.all([
+        addDoc(collection(db, "stories", storyRef.id, "content"), {
+          id: "full",
+          content: storyData.content,
+          updatedAt: serverTimestamp()
+        }),
+        addDoc(collection(db, "auditLogs"), {
+          action: "STORY_PUBLISH",
+          performedBy: user.uid,
+          details: `Author published story ${storyData.title}`,
+          entityId: storyRef.id,
+          timestamp: serverTimestamp()
+        }),
+        new Promise<void>((resolve) => {
+          setMyStories(prev => [{ id: storyRef.id, ...storyPayload, createdAt: { toMillis: () => Date.now() } as any }, ...prev]);
+          resolve();
+        })
+      ]);
+
+      toast.success("Story published successfully!", { id: toastId });
+      setStoryData({ title: "", category: "Personal Growth", summary: "", content: "" });
+      setStoryCover(null);
+      setActiveTab("stories");
+    } catch (err) {
+      console.error("Story publish error:", err);
+      handleFirestoreError(err, OperationType.WRITE, "stories");
+      toast.error("Story publication failed.", { id: toastId });
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (authLoading || (user && fetching)) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin text-brand" size={40} /></div>;
@@ -508,6 +600,9 @@ export function PublisherPortal() {
     const totalJournalReads = myPublishedJournals.reduce((acc, j) => acc + (j.readCount || 0), 0);
     const journalEarnings = totalJournalReads * 0.10; // $0.10 per read split
 
+    const totalStoryReads = myStories.reduce((acc, s) => acc + (s.readCount || 0), 0);
+    const storyEarnings = totalStoryReads * 0.10;
+
     return (
     <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
       <div className="mb-12 flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
@@ -542,6 +637,7 @@ export function PublisherPortal() {
           {[
             { id: "dashboard", icon: BarChart3, label: "Overview" },
             { id: "manage", icon: Database, label: "My Books" },
+            { id: "stories", icon: PenTool, label: "Stories" },
             { id: "journals", icon: FileText, label: "Journals" },
             { id: "earnings", icon: DollarSign, label: "Earnings" },
             { id: "upload", icon: Plus, label: "New Title" }
@@ -566,32 +662,75 @@ export function PublisherPortal() {
             key="dashboard"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="grid grid-cols-1 gap-8 md:grid-cols-3"
+            className="space-y-8"
           >
-             <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Volumes</h3>
+            <div className="grid grid-cols-1 gap-8 md:grid-cols-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Books</h3>
                 <p className="mt-4 text-4xl font-black text-slate-900">{myBooks.length}</p>
-                <div className="mt-4 flex gap-2">
-                   <div className="flex items-center gap-1 text-[8px] font-black uppercase text-green-600 bg-green-50 px-2 py-0.5 rounded">
-                      {myBooks.filter(b => b.status === "published").length} Live
-                   </div>
-                   <div className="flex items-center gap-1 text-[8px] font-black uppercase text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
-                      {myBooks.filter(b => b.status !== "published").length} Pending
-                   </div>
+                <div className="mt-2 text-[8px] font-black uppercase text-slate-400 tracking-tighter">
+                  {myBooks.filter(b => b.status === "published").length} Live
                 </div>
-             </div>
-             <div className="col-span-2 rounded-2xl border border-slate-200 bg-slate-900 p-8 text-white shadow-lg">
-                <div className="flex items-center justify-between">
-                   <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Projected Royalty (70%)</h3>
-                   <span className="text-[10px] font-black uppercase tracking-widest text-brand">Tier: Author Pro</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Stories</h3>
+                <p className="mt-4 text-4xl font-black text-slate-900">{myStories.length}</p>
+                <div className="mt-2 text-[8px] font-black uppercase text-brand tracking-tighter">
+                  {totalStoryReads} Total Reads
                 </div>
-                <p className="mt-4 text-5xl font-black">${totalRoyalty.toFixed(2)}</p>
-                <p className="mt-2 text-sm text-slate-400 italic">
-                  {myTransactions.length > 0 
-                    ? `Based on ${myTransactions.length} successful downloads.` 
-                    : "No sales recorded in the last 30 days. Promote your work to boost earnings!"}
-                </p>
-             </div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Journals</h3>
+                <p className="mt-4 text-4xl font-black text-slate-900">{myPublishedJournals.length}</p>
+                <div className="mt-2 text-[8px] font-black uppercase text-blue-500 tracking-tighter">
+                  {totalJournalReads} Total Reads
+                </div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Trans.</h3>
+                <p className="mt-4 text-4xl font-black text-slate-900">{myTransactions.length}</p>
+                <div className="mt-2 text-[8px] font-black uppercase text-slate-400 tracking-tighter">
+                  Last 30 Days
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-[2.5rem] bg-slate-900 p-12 text-white shadow-2xl relative overflow-hidden">
+               <div className="absolute right-0 top-0 h-full w-1/2 bg-gradient-to-l from-brand/20 to-transparent pointer-events-none" />
+               <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+                  <div>
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-400 mb-2">Total Unified Earnings</h3>
+                    <p className="text-7xl font-black text-white tracking-tight">
+                      ${(totalRoyalty + journalEarnings + storyEarnings).toFixed(2)}
+                    </p>
+                    <div className="mt-8 flex flex-wrap gap-4">
+                      <div className="rounded-full bg-white/5 border border-white/10 px-4 py-2 flex items-center gap-2">
+                        <div className="h-2 w-2 rounded-full bg-brand" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Books: ${totalRoyalty.toFixed(2)}</span>
+                      </div>
+                      <div className="rounded-full bg-white/5 border border-white/10 px-4 py-2 flex items-center gap-2">
+                        <div className="h-2 w-2 rounded-full bg-purple-500" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Stories: ${storyEarnings.toFixed(2)}</span>
+                      </div>
+                      <div className="rounded-full bg-white/5 border border-white/10 px-4 py-2 flex items-center gap-2">
+                        <div className="h-2 w-2 rounded-full bg-blue-500" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Journals: ${journalEarnings.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-6">
+                    <p className="text-sm text-slate-400 leading-relaxed italic">
+                      "Your words are your wealth. At JM BOOKS, we ensure authors receive the highest industry splits, paid out directly to your connected wallet."
+                    </p>
+                    <button 
+                      onClick={() => setActiveTab("earnings")}
+                      className="group flex items-center gap-2 text-xs font-black uppercase tracking-widest text-brand hover:text-white transition-colors"
+                    >
+                      Detailed Breakdown <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                    </button>
+                  </div>
+               </div>
+            </div>
           </motion.div>
         )}
 
@@ -621,6 +760,14 @@ export function PublisherPortal() {
                 <div className="rounded-2xl border border-slate-200 bg-white p-8 border-l-4 border-l-green-500 shadow-sm">
                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Journal Earnings (@$0.10)</p>
                    <p className="mt-2 text-3xl font-black text-green-600">${journalEarnings.toFixed(2)}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-8 border-l-4 border-l-purple-500 shadow-sm">
+                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Story Reads (Subscribers)</p>
+                   <p className="mt-2 text-3xl font-black text-slate-900">{totalStoryReads}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-8 border-l-4 border-l-brand shadow-sm">
+                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Story Royalty Support</p>
+                   <p className="mt-2 text-3xl font-black text-brand">${storyEarnings.toFixed(2)}</p>
                 </div>
              </div>
 
@@ -748,6 +895,107 @@ export function PublisherPortal() {
             </div>
           </motion.div>
         )}
+        {activeTab === "stories" && (
+          <motion.div 
+            key="stories"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-12"
+          >
+            <form onSubmit={handleStorySubmit} className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm space-y-6">
+                <div className="flex items-center justify-between">
+                    <h3 className="text-xl font-black text-slate-900 border-l-4 border-brand pl-4">Publish New Story</h3>
+                    <div className="flex items-center gap-2 bg-purple-50 text-purple-600 px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border border-purple-100">
+                        <Sparkles size={14} /> Premium Category
+                    </div>
+                </div>
+                
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                  <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Story Title</label>
+                      <input required value={storyData.title} onChange={e => setStoryData({...storyData, title: e.target.value})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none border border-slate-200 focus:ring-1 focus:ring-brand" />
+                  </div>
+                  <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Category</label>
+                      <select value={storyData.category} onChange={e => setStoryData({...storyData, category: e.target.value})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none border border-slate-200 focus:ring-1 focus:ring-brand">
+                          {["Personal Growth", "Business", "Tech", "Life Lessons", "Creativity", "Future"].map(c => <option key={c}>{c}</option>)}
+                      </select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Hero Image (Optional)</label>
+                    <div className="relative flex h-24 items-center justify-center rounded border-2 border-dashed border-slate-200 bg-slate-50 transition-colors hover:border-brand">
+                        <input type="file" accept="image/*" onChange={e => setStoryCover(e.target.files?.[0] || null)} className="absolute inset-0 cursor-pointer opacity-0" />
+                        <div className="flex flex-col items-center gap-1 text-slate-400">
+                            {storyCover ? <CheckCircle2 size={20} className="text-green-500" /> : <Upload size={18} />}
+                            <p className="text-[8px] font-bold uppercase">{storyCover ? storyCover.name : "Select Image"}</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Public Summary (The Paywall Preview)</label>
+                    <textarea required rows={3} value={storyData.summary} onChange={e => setStoryData({...storyData, summary: e.target.value})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none border border-slate-200 focus:ring-1 focus:ring-brand italic" placeholder="This summary is shown to everyone..." />
+                </div>
+
+                <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Full Story Content (Subscriber-Only)</label>
+                    <textarea required rows={10} value={storyData.content} onChange={e => setStoryData({...storyData, content: e.target.value})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-serif outline-none border border-slate-200 focus:ring-1 focus:ring-brand" placeholder="Write your full story here..." />
+                </div>
+
+                <button disabled={loading} className="w-full rounded-full bg-slate-900 py-5 text-sm font-black uppercase tracking-widest text-white shadow-xl transition-all hover:bg-brand active:scale-95 disabled:opacity-50">
+                    {loading ? <Loader2 className="mx-auto animate-spin" /> : "Publish Story to Journal"}
+                </button>
+            </form>
+
+            <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+                <div className="bg-slate-50 border-b border-slate-200 px-6 py-4">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">My Published Stories</h3>
+                </div>
+                <table className="w-full text-left">
+                    <thead className="border-b border-slate-200">
+                        <tr>
+                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Story Details</th>
+                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Reads</th>
+                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Status</th>
+                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {myStories.map(s => (
+                            <tr key={s.id}>
+                                <td className="px-6 py-4">
+                                    <p className="text-sm font-bold text-slate-900">{s.title}</p>
+                                    <p className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">{s.category}</p>
+                                </td>
+                                <td className="px-6 py-4 text-sm font-black text-brand">{s.readCount || 0}</td>
+                                <td className="px-6 py-4">
+                                    <span className="bg-green-50 text-green-600 rounded px-2 py-0.5 text-[8px] font-black uppercase tracking-widest">Active</span>
+                                </td>
+                                <td className="px-6 py-4">
+                                    <div className="flex gap-4">
+                                        <button onClick={() => toast.error("Editing coming soon")} className="text-slate-400 hover:text-brand"><Edit3 size={16} /></button>
+                                        <button onClick={async () => {
+                                          if (confirm("Delete this story?")) {
+                                            await deleteDoc(doc(db, "stories", s.id));
+                                            setMyStories(myStories.filter(prev => prev.id !== s.id));
+                                          }
+                                        }} className="text-slate-400 hover:text-red-500"><Trash2 size={16} /></button>
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                        {myStories.length === 0 && (
+                          <tr>
+                            <td colSpan={4} className="px-6 py-12 text-center text-sm italic text-slate-400">No stories published yet.</td>
+                          </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+          </motion.div>
+        )}
         {activeTab === "manage" && (
           <motion.div 
             key="manage"
@@ -854,19 +1102,25 @@ export function PublisherPortal() {
             onSubmit={handleUpload} 
             className="mx-auto max-w-4xl space-y-8 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm"
           >
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Book Title</label>
-                <input required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none border border-slate-200 focus:ring-1 focus:ring-brand" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Author Name (Display)</label>
-                <input required value={formData.author} onChange={e => setFormData({...formData, author: e.target.value})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none border border-slate-200 focus:ring-1 focus:ring-brand" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">ISBN-13</label>
-                <input required maxLength={13} value={formData.isbn13} onChange={e => setFormData({...formData, isbn13: e.target.value.replace(/\D/g, '')})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none border border-slate-200 focus:ring-1 focus:ring-brand" />
-              </div>
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Book Title</label>
+                    <input required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none border border-slate-200 focus:ring-1 focus:ring-brand" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Author Name (Display)</label>
+                    <input required value={formData.author} onChange={e => setFormData({...formData, author: e.target.value})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none border border-slate-200 focus:ring-1 focus:ring-brand" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">ISBN / Book ID (Optional)</label>
+                    <input 
+                      value={formData.isbn13} 
+                      onChange={e => setFormData({...formData, isbn13: e.target.value})} 
+                      className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none border border-slate-200 focus:ring-1 focus:ring-brand" 
+                      placeholder="Leave empty for auto JM-ID" 
+                    />
+                    <p className="text-[9px] text-slate-400 italic">No ISBN? We'll generate a unique JM-ID for internal use.</p>
+                  </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Category</label>
                 <select value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full rounded bg-slate-50 px-4 py-3 text-sm font-medium outline-none border border-slate-200 focus:ring-1 focus:ring-brand">

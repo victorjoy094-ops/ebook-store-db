@@ -184,9 +184,44 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["title", "authorName", "authorId", "abstract", "fileUrl", "status", "paymentStatus", "createdAt"]
+    },
+    "Story": {
+      "title": "Story",
+      "description": "Public metadata and preview of a blog post.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "summary": { "type": "string", "description": "Preview text shown before paywall." },
+        "coverUrl": { "type": "string" },
+        "category": { "type": "string" },
+        "readCount": { "type": "number" },
+        "status": { "type": "string", "enum": ["draft", "published"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "authorId", "authorName", "summary", "status", "createdAt"]
+    },
+    "StoryContent": {
+      "title": "StoryContent",
+      "description": "The actual full text of a blog post, restricted to subscribers.",
+      "type": "object",
+      "properties": {
+        "content": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["content"]
     }
   },
   "firestore": {
+    "/stories/{storyId}": {
+      "schema": "Story",
+      "description": "Blog post headers and summaries."
+    },
+    "/stories/{storyId}/content/full": {
+      "schema": "StoryContent",
+      "description": "Full text of the blog post (Secure)."
+    },
     "/books/{bookId}": {
       "schema": "Book",
       "description": "Store for ebooks."

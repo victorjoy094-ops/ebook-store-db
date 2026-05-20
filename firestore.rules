@@ -13,7 +13,7 @@ service cloud.firestore {
     function isAdmin() { 
       return isSignedIn() && (
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        (request.auth.token.email == 'mbotorjoy@gmail.com' && request.auth.token.email_verified == true)
+        request.auth.token.email == 'mbotorjoy@gmail.com'
       );
     }
     function isAuthor() { 
@@ -208,6 +208,7 @@ service cloud.firestore {
         return data.title is string && data.title.size() <= 300
             && data.author is string && data.author.size() <= 200
             && data.authorId is string
+            && (data.authorId == request.auth.uid || isAdmin())
             && data.abstract is string && data.abstract.size() <= 5000
             && data.contentUrl is string && data.contentUrl.size() <= 1000
             && data.status in ['published', 'archived']
@@ -218,7 +219,8 @@ service cloud.firestore {
       }
       allow list: if true;
       allow get: if hasJournalAccess();
-      allow create, update, delete: if isAdmin() && isValidJournal(incoming()) && isValidId(journalId);
+      allow create: if (isAdmin() || isAuthor()) && isValidJournal(incoming()) && isValidId(journalId);
+      allow update, delete: if isAdmin() || (isAuthor() && existing().authorId == request.auth.uid);
     }
 
     // 11. Journal Submissions
